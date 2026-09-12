@@ -7,9 +7,9 @@
 - 客户构建必须显式使用 `PUBLIC_CUSTOMER_MODE=blank`，且必须配置 `CUSTOMER_ID`、Pages 项目名、固定网址和唯一 KV。
 - `demo` 只能在同时设置 `PUBLIC_CUSTOMER_MODE=demo` 与 `ALLOW_DEMO_BUILD=true` 时构建；仓库不提供 demo 内容。
 - 缺少或错配 ID、Pages 项目名、KV 绑定、固定网址时，构建或运行时立即失败，不回退到 demo。
-- 后台密码只从 `ADMIN_PASSWORD` 环境变量送入 Cloudflare Secret；脚本不把密码写入仓库或配置。
+- 后台密码为每站独立的六位数字，只从进程环境送入 Cloudflare Secret；脚本不把密码写入仓库或配置。批量流程将私密交付记录追加到仓库外的站主目录。
 - 不提供删除、清空、迁移或初始化既有 KV 的脚本。
-- 新 blank 站预置四个**空分类结构**：日常、合照、谷子、稿件。分类中不预置图片或客户内容；分类可在后台改名、排序和管理。
+- 新 blank 站预置四个**可编辑空分类**：日常、合照、谷子、稿件。分类中不预置图片或客户内容；前台使用 bfab755 的紧凑入口卡与点击展开照片网格结构，分类可在后台改名、新增、删除和排序。
 
 ## 本地安装与测试
 
@@ -37,7 +37,7 @@ npm run customer:names -- --count 1 --suffix-length 6
 npm run customer:plan -- --slug luna-a1b2c3
 ```
 
-正式执行前确保工作树干净，通过不回显的输入把密码放入本进程环境：
+单站正式执行前确保工作树干净，通过不回显的输入把六位数字密码放入本进程环境：
 
 ```powershell
 $env:ADMIN_PASSWORD = Read-Host "输入客户后台密码" -MaskInput
@@ -55,10 +55,25 @@ Remove-Item Env:ADMIN_PASSWORD
 6. 以 blank 模式构建并执行源码、产物和身份审计。
 7. Wrangler 手动部署，不启用 Git Push 自动部署。
 8. 下载 Pages 远端配置，只核对项目名、`CUSTOMER_ID` 和 KV binding。
-9. 验收固定前台、后台、公开 API、正确/错误密码、前后端 ID、空 KV，以及首次打开即展示四个空相册分区。
-10. 站主交付闭环：通过安全的一次性渠道把后台密码交给站主，不在 Git、配置、Markdown、截图或公开聊天中记录；由站主或交付者完成一次真实后台登录，并验证退出重登后仍可登录。仅验证 Secret 已写入不算交付完成。
+9. 验收固定前台、后台、公开 API、正确/错误密码、前后端 ID、空 KV，以及首次打开即展示四张紧凑的空相册入口卡。
+10. 站主交付闭环：通过私密清单或安全的一次性渠道把后台密码交给站主，不在 Git、配置、公开 Markdown、截图或公开聊天中记录；完成一次真实后台登录，并验证刷新、退出重登。仅验证 Secret 已写入不算交付完成。
 
 任何步骤失败都会停止；脚本不会回滚时删除已创建资源，防止误删。应检查已完成步骤后再决定如何继续，不能盲目重跑。
+
+## 批量私密交付清单
+
+此流程只用于已验收的标签；先在本机安装 Playwright Chromium（浏览器存在性在创建任何云资源之前检查）：
+
+```powershell
+npx playwright install chromium
+npm run customer:batch -- --count 5 --template-version v1.0.0-rc.3
+```
+
+批量脚本检查干净的 `main`、GitHub 远端 commit 与指定标签完全一致，然后为每站创建仓库外的 fresh clone，生成独立随机项目名、CUSTOMER_ID、KV 和六位密码。每站完成 Secret 写入、blank 构建、手动部署、API/KV 验收及真实浏览器后台登录（含刷新、退出重登）后，才标记为“待售”。若浏览器登录失败，凭据仍追加保存为“待验收”，绝不错误标记待售。
+
+默认私密目录为当前 Windows 用户的 `%LOCALAPPDATA%\Dream-Memory-Golden-Delivery`，其中 `delivery-ledger.jsonl` 是**追加式**清单，不覆盖旧记录；每次完成都会在该私密目录生成并自动打开本机完成页面，展示客户编号、前后台固定链接、密码、CUSTOMER_ID、Pages 项目、模板版本和待售/已售状态。可用 `--delivery-dir` 指定另一个仓库外私密目录。不要把该目录放入云同步、Git、截图或分享链接；逐个向对应客户交付密码，不转发整份清单。已有客户售出状态只能追加变更记录，不能回退为待售。
+
+售出后执行 `npm run customer:mark-sold -- --project dream-memory-<随机名>`，只追加一条“已售”状态，不改动密码、Pages 或 KV。
 
 ## 已纳入的基础版
 

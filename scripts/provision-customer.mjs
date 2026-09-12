@@ -37,7 +37,7 @@ if (!execute) {
   console.log(JSON.stringify({ mode: "plan-only", projectName, customerId, actions: plan }, null, 2));
   process.exit(0);
 }
-if (!process.env.ADMIN_PASSWORD) throw new Error("ADMIN_PASSWORD must be supplied through the environment");
+if (!/^\d{6}$/.test(process.env.ADMIN_PASSWORD || "")) throw new Error("ADMIN_PASSWORD must be a unique six-digit code supplied through the environment");
 if (run("git", ["status", "--porcelain"]).trim()) throw new Error("Refusing to provision from a dirty Git worktree");
 const wrangler = [wranglerCli];
 const projectList = JSON.parse(run(process.execPath, [...wrangler, "pages", "project", "list", "--json"]));

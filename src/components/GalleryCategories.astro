@@ -90,33 +90,61 @@ for (const item of galleryPhotos) {
   itemsByCategory.set(item.category, group);
 }
 
-const categoryLayout = categories.length === 0
+const categoryCards = categories.map((category) => {
+  const group = itemsByCategory.get(category.data.key) ?? [];
+  return {
+    key: category.data.key,
+    title: category.data.title,
+    cover: isBlankCustomerMode ? "/uploads/memory-placeholder.svg" : category.data.cover || group[0]?.image || "/uploads/memory-placeholder.svg",
+    coverPosition: isBlankCustomerMode ? "center" : category.data.cover ? category.data.coverPosition : group[0]?.imagePosition,
+    count: group.length,
+  };
+});
+const categoryLayout = categoryCards.length === 0
   ? "zero"
-  : categories.length === 1
+  : categoryCards.length === 1
     ? "one"
-    : categories.length === 2
+    : categoryCards.length === 2
       ? "two"
-      : categories.length === 3
+      : categoryCards.length === 3
         ? "three"
         : "many";
 ---
 
-<section class="goods-section" data-gallery-module={instanceId} data-category-count={categories.length} data-category-layout={categoryLayout}>
+<section class="goods-section" data-gallery-module={instanceId} data-category-count={categoryCards.length} data-category-layout={categoryLayout}>
   <div class="section-heading-row">
     <h2 class="section-title" data-cloud-text={titlePath}>{title}</h2>
   </div>
   {
-    categories.length > 0 ? (
+    categoryCards.length > 0 ? (
+      <>
+        <div class="category-entry-grid" data-category-entry-grid>
+          {categoryCards.map((category) => (
+            <button class="category-entry-card" type="button" data-open-category={category.key} aria-expanded="false">
+              <img
+                src={category.cover}
+                alt={`${category.title}封面`}
+                loading="lazy"
+                style={`object-position: ${getObjectPosition(category.coverPosition)};`}
+              />
+              <span>
+                <strong>{category.title}</strong>
+                <small data-category-card-count={category.key} data-base-count={category.count}>{category.title} {category.count}张</small>
+              </span>
+            </button>
+          ))}
+        </div>
         <div class="category-detail-wrap">
           {categories.map((category) => {
             const group = itemsByCategory.get(category.data.key) ?? [];
             return (
-              <section class="category-detail-panel" data-category-panel={category.data.key} data-category-title={category.data.title}>
+              <section class="category-detail-panel" data-category-panel={category.data.key} data-category-title={category.data.title} hidden>
                 <div class="category-detail-heading">
                   <h3>{category.data.title}</h3>
                   <span data-category-panel-count={category.data.key} data-base-count={group.length}>{group.length}张</span>
                 </div>
-                <div class="goods-grid">
+                {group.length > 0 ? (
+                  <div class="goods-grid">
                     {group.map((item) => {
                       const galleryIndex = galleryPhotos.findIndex((entry) => entry.id === item.id);
                       return (
@@ -159,13 +187,21 @@ const categoryLayout = categories.length === 0
                         </article>
                       );
                     })}
-                </div>
+                  </div>
+                ) : (
+                  <p class="empty">这个分类还没有图片，可以从后台新增。</p>
+                )}
               </section>
             );
           })}
         </div>
+      </>
     ) : (
-      <div class="category-detail-wrap"></div>
+      <>
+        <p class="empty">还没有分类，可以先在后台新增相册分类。</p>
+        <div class="category-entry-grid" data-category-entry-grid></div>
+        <div class="category-detail-wrap"></div>
+      </>
     )
   }
 </section>
@@ -193,6 +229,15 @@ const categoryLayout = categories.length === 0
   const nextButton = lightbox?.querySelector("[data-gallery-next]");
   let currentIndex = 0;
 
+  function openCategory(key) {
+    root?.querySelectorAll("[data-open-category]").forEach((button) => {
+      button.setAttribute("aria-expanded", String(button.getAttribute("data-open-category") === key));
+    });
+    root?.querySelectorAll("[data-category-panel]").forEach((panel) => {
+      panel.hidden = panel.getAttribute("data-category-panel") !== key;
+    });
+  }
+
   function showPhoto(index) {
     if (!lightbox || !image || !caption || photos.length === 0) return;
     currentIndex = (index + photos.length) % photos.length;
@@ -218,8 +263,14 @@ const categoryLayout = categories.length === 0
 
   root?.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : null;
+    const categoryButton = target?.closest("[data-open-category]");
     const imageButton = target?.closest("[data-gallery-index]");
     const copyButton = target?.closest("[data-goods-copy-toggle]");
+
+    if (categoryButton) {
+      openCategory(categoryButton.getAttribute("data-open-category") || "");
+      return;
+    }
 
     if (copyButton) {
       const wrap = copyButton.closest(".goods-copy-wrap");
