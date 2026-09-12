@@ -49,7 +49,7 @@ Remove-Item Env:ADMIN_PASSWORD
 1. 检查 Git 工作树和 Pages/KV 名称冲突。
 2. 创建唯一 KV namespace。
 3. 创建唯一 Pages 项目，生产分支名等于 `CUSTOMER_ID`。
-4. 在被忽略的 `.customer/<项目>/wrangler.jsonc` 中生成单一身份配置；Functions 和构建都从它取值。
+4. 在该客户专用 fresh clone 根目录生成被 Git 忽略的 `wrangler.jsonc` 单一身份配置；Pages、Functions 和构建都从它取值。
 5. 把 `ADMIN_PASSWORD` 通过标准输入写入 Pages Secret。
 6. 以 blank 模式构建并执行源码、产物和身份审计。
 7. Wrangler 手动部署，不启用 Git Push 自动部署。
