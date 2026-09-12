@@ -33,19 +33,8 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
     }
 
     function createCategory(root, category) {
-      const entryGrid = root.querySelector("[data-category-entry-grid]");
       const detailWrap = root.querySelector(".category-detail-wrap");
-      if (!entryGrid || !detailWrap) return null;
-
-      let button = root.querySelector(`[data-open-category="${category.key}"]`);
-      if (!button) {
-        button = document.createElement("button");
-        button.className = "category-entry-card";
-        button.type = "button";
-        button.setAttribute("data-open-category", category.key);
-        button.innerHTML = `<img src="/uploads/memory-placeholder.svg" alt=""><span><strong></strong><small data-category-card-count="${category.key}"></small></span>`;
-        entryGrid.append(button);
-      }
+      if (!detailWrap) return null;
 
       let panel = root.querySelector(`[data-category-panel="${category.key}"]`);
       if (!panel) {
@@ -56,16 +45,9 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
         detailWrap.append(panel);
       }
 
-      button.querySelector("strong").textContent = category.title;
-      const cover = button.querySelector("img");
-      if (cover && category.cover) {
-        cover.src = category.cover;
-        cover.alt = `${category.title}封面`;
-        const positions = { center: "center center", top: "center top", bottom: "center bottom", left: "left center", right: "right center" };
-        cover.style.objectPosition = positions[category.coverPosition] || positions.center;
-      }
       panel.querySelector("h3").textContent = category.title;
-      return { button, panel };
+      panel.hidden = false;
+      return panel;
     }
 
     function renderCloudGallery(data) {
@@ -84,7 +66,7 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
       const images = Array.isArray(data.galleryDraft?.images) ? data.galleryDraft.images : [];
       if (hasStoredCategories) setCategoryLayout(root, categories.length);
       if (hasStoredCategories && categories.length === 0) {
-        if (replaceBuiltInGallery) root.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+        if (replaceBuiltInGallery) root.querySelectorAll("[data-category-panel]").forEach((node) => node.remove());
         if (pageGallery) pageGallery.hidden = true;
         return;
       }
@@ -92,7 +74,7 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
       if (!hasStoredCategories && images.length === 0) return;
 
       if (replaceBuiltInGallery) {
-        root.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+        root.querySelectorAll("[data-category-panel]").forEach((node) => node.remove());
       }
       const categoryMap = new Map(categories.map((category) => [category.key, category]));
       if (!hasStoredCategories) {
@@ -100,7 +82,7 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
           const key = getCategoryKey(item);
           if (!categoryMap.has(key)) categoryMap.set(key, { key, title: item.category || "未分类" });
         }
-        setCategoryLayout(root, categoryMap.size || root.querySelectorAll("[data-open-category]").length);
+        setCategoryLayout(root, categoryMap.size || root.querySelectorAll("[data-category-panel]").length);
       }
 
       for (const category of categoryMap.values()) createCategory(root, category);
@@ -144,32 +126,16 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
         }
         grid.append(card);
         dynamicPhotos.push({ image: item.image, title: item.title || categoryMap.get(key)?.title || "图片", caption: item.caption || "" });
-        const categoryCover = root.querySelector(`[data-open-category="${key}"] img`);
-        if (categoryCover && !categoryMap.get(key)?.cover && !counts.has(key)) {
-          categoryCover.src = item.image;
-          categoryCover.alt = `${categoryMap.get(key)?.title || item.category || "分类"}封面`;
-        }
         counts.set(key, (counts.get(key) || 0) + 1);
       }
 
-      for (const [key, category] of categoryMap) {
+      for (const key of categoryMap.keys()) {
         const count = counts.get(key) || 0;
-        const button = root.querySelector(`[data-open-category="${key}"]`);
         const panel = root.querySelector(`[data-category-panel="${key}"]`);
-        const cardCount = root.querySelector(`[data-category-card-count="${key}"]`);
         const panelCount = root.querySelector(`[data-category-panel-count="${key}"]`);
-        const baseCount = replaceBuiltInGallery ? 0 : Number(cardCount?.getAttribute("data-base-count") || panelCount?.getAttribute("data-base-count") || 0);
-        if (cardCount) cardCount.textContent = `${category.title} ${baseCount + count}张`;
+        const baseCount = replaceBuiltInGallery ? 0 : Number(panelCount?.getAttribute("data-base-count") || 0);
         if (panelCount) panelCount.textContent = `${baseCount + count}张`;
-        if (button) button.setAttribute("aria-expanded", "false");
-        if (panel) panel.hidden = true;
-      }
-
-      const firstKey = categoryMap.keys().next().value;
-      if (firstKey) {
-        root.querySelector(`[data-open-category="${firstKey}"]`)?.setAttribute("aria-expanded", "true");
-        const firstPanel = root.querySelector(`[data-category-panel="${firstKey}"]`);
-        if (firstPanel) firstPanel.hidden = false;
+        if (panel) panel.hidden = false;
       }
       document.dispatchEvent(new CustomEvent("dream-gallery-update", { detail: { instanceId: "album-gallery", photos: dynamicPhotos } }));
     }

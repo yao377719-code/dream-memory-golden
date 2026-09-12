@@ -344,6 +344,7 @@ function anniversaryText(date: Date, kind: "since" | "countdown") {
         "约会": "date",
         "谷子": "goods",
         "合照": "together",
+        "稿件": "artwork",
       };
       return labelMap[item.category] || "goods";
     }
@@ -356,37 +357,14 @@ function anniversaryText(date: Date, kind: "since" | "countdown") {
 
     function ensureCategoryPanel(category) {
       const root = document.querySelector("[data-gallery-module='home-gallery']");
-      const entryGrid = root?.querySelector("[data-category-entry-grid]");
       const detailWrap = root?.querySelector(".category-detail-wrap");
-      if (!root || !entryGrid || !detailWrap) return null;
-
-      let button = root.querySelector(`[data-open-category="${category.key}"]`);
-      if (!button) {
-        button = document.createElement("button");
-        button.className = "category-entry-card";
-        button.type = "button";
-        button.setAttribute("data-open-category", category.key);
-        button.setAttribute("aria-expanded", "false");
-        const image = document.createElement("img");
-        const label = document.createElement("span");
-        const title = document.createElement("strong");
-        const count = document.createElement("small");
-        image.src = "/uploads/memory-placeholder.svg";
-        image.alt = `${category.title}封面`;
-        image.loading = "lazy";
-        count.setAttribute("data-category-card-count", category.key);
-        count.setAttribute("data-base-count", "0");
-        label.append(title, count);
-        button.append(image, label);
-        entryGrid.append(button);
-      }
+      if (!root || !detailWrap) return null;
 
       let panel = root.querySelector(`[data-category-panel="${category.key}"]`);
       if (!panel) {
         panel = document.createElement("section");
         panel.className = "category-detail-panel";
         panel.setAttribute("data-category-panel", category.key);
-        panel.hidden = true;
         const heading = document.createElement("div");
         const title = document.createElement("h3");
         const count = document.createElement("span");
@@ -407,22 +385,11 @@ function anniversaryText(date: Date, kind: "since" | "countdown") {
         panel.append(grid);
       }
 
-      button.hidden = false;
-      panel.hidden = panel.hidden;
+      panel.hidden = false;
       panel.setAttribute("data-category-title", category.title);
-      button.querySelector("strong").textContent = category.title;
-      const cover = button.querySelector("img");
-      if (cover && category.cover) {
-        cover.src = category.cover;
-        cover.alt = `${category.title}封面`;
-        const positions = { center: "center center", top: "center top", bottom: "center bottom", left: "left center", right: "right center" };
-        cover.style.objectPosition = positions[category.coverPosition] || positions.center;
-      }
       panel.querySelector("h3").textContent = category.title;
-      const cardCount = button.querySelector(`[data-category-card-count="${category.key}"]`);
       const panelCount = panel.querySelector(`[data-category-panel-count="${category.key}"]`);
-      const base = Number(cardCount?.getAttribute("data-base-count") || panelCount?.getAttribute("data-base-count") || 0);
-      if (cardCount) cardCount.textContent = `${category.title} ${base}张`;
+      const base = Number(panelCount?.getAttribute("data-base-count") || 0);
       if (panelCount) panelCount.textContent = `${base}张`;
       return panel;
     }
@@ -432,37 +399,26 @@ function anniversaryText(date: Date, kind: "since" | "countdown") {
       const categories = getCloudCategories(data);
       const root = document.querySelector("[data-gallery-module='home-gallery']");
       if (!hasStoredCategories) {
-        const count = root?.querySelectorAll("[data-open-category]:not([hidden])").length || 0;
+        const count = root?.querySelectorAll("[data-category-panel]:not([hidden])").length || 0;
         setCategoryLayout(root, count);
         return { map: new Map(), count, hasStoredCategories: false };
       }
       setCategoryLayout(root, categories.length);
       if (categories.length === 0) {
         if (replaceBuiltInGallery) {
-          root?.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+          root?.querySelectorAll("[data-category-panel]").forEach((node) => node.remove());
         }
         return { map: new Map(), count: 0, hasStoredCategories: true };
       }
       const allowed = new Set(categories.map((category) => category.key));
       if (replaceBuiltInGallery) {
-        root?.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+        root?.querySelectorAll("[data-category-panel]").forEach((node) => node.remove());
       }
-      root?.querySelectorAll("[data-open-category]").forEach((button) => {
-        button.hidden = !allowed.has(button.getAttribute("data-open-category"));
-        button.setAttribute("aria-expanded", "false");
-      });
-      root?.querySelectorAll("[data-category-panel]").forEach((panel) => {
-        panel.hidden = true;
-      });
       const map = new Map();
       for (const category of categories) {
         ensureCategoryPanel(category);
         map.set(category.key, category);
       }
-      const first = categories[0];
-      root?.querySelector(`[data-open-category="${first.key}"]`)?.setAttribute("aria-expanded", "true");
-      const firstPanel = root?.querySelector(`[data-category-panel="${first.key}"]`);
-      if (firstPanel) firstPanel.hidden = false;
       return { map, count: categories.length, hasStoredCategories: true };
     }
 
@@ -814,23 +770,12 @@ function anniversaryText(date: Date, kind: "since" | "countdown") {
         card.append(button, body);
         grid.append(card);
         dynamicPhotos.push({ image: item.image, title: item.title || category.title || "图片", caption: item.caption || "" });
-        const categoryCover = document.querySelector(`[data-open-category="${key}"] img`);
-        if (categoryCover && !categoryMap.get(key)?.cover && !addedByCategory.has(key) && categoryCover.src.includes("memory-placeholder")) {
-          categoryCover.src = item.image;
-          categoryCover.alt = `${categoryMap.get(key)?.title || category.title || item.category || "分类"}封面`;
-        }
         addedByCategory.set(key, (addedByCategory.get(key) || 0) + 1);
       }
 
       for (const [key, added] of addedByCategory) {
-        const cardCount = document.querySelector(`[data-category-card-count="${key}"]`);
         const panelCount = document.querySelector(`[data-category-panel-count="${key}"]`);
-        const title = document.querySelector(`[data-category-panel="${key}"]`)?.getAttribute("data-category-title") || "";
-        for (const node of [cardCount, panelCount]) {
-          if (!node) continue;
-          const base = Number(node.getAttribute("data-base-count") || 0);
-          node.textContent = node === cardCount ? `${title} ${base + added}张` : `${base + added}张`;
-        }
+        if (panelCount) panelCount.textContent = `${Number(panelCount.getAttribute("data-base-count") || 0) + added}张`;
       }
       document.dispatchEvent(new CustomEvent("dream-gallery-update", { detail: { instanceId: "home-gallery", photos: dynamicPhotos } }));
     }

@@ -54,6 +54,14 @@ export const modules = {
   adminTitle: "管理入口",
 };
 
+// Empty product structure, not seeded customer content or demo media.
+export const defaultGalleryCategories = [
+  { key: "daily", title: "日常", order: 1, cover: "", coverPosition: "center" },
+  { key: "together", title: "合照", order: 2, cover: "", coverPosition: "center" },
+  { key: "goods", title: "谷子", order: 3, cover: "", coverPosition: "center" },
+  { key: "artwork", title: "稿件", order: 4, cover: "", coverPosition: "center" },
+];
+
 export const navigation = {
   items: [
     { label: "主页", href: "/", order: 1, visible: true },

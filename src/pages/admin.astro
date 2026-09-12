@@ -1,12 +1,12 @@
 ---
 import { getCollection } from "astro:content";
-import { about, isBlankCustomerMode, modules, profile } from "../data/siteDefaults";
+import { about, defaultGalleryCategories as blankGalleryCategories, isBlankCustomerMode, modules, profile } from "../data/siteDefaults";
 import { themeMap, themeOptions } from "../data/themes";
 import { editableTitlePaths } from "../data/editableTitles.mjs";
 
 const customerId = import.meta.env.PUBLIC_CUSTOMER_ID;
 const pagesProjectName = import.meta.env.PUBLIC_PAGES_PROJECT_NAME;
-const defaultGalleryCategories = (await getCollection("galleryCategories"))
+const defaultGalleryCategories = isBlankCustomerMode ? blankGalleryCategories.map((category) => ({ ...category })) : (await getCollection("galleryCategories"))
   .sort((a, b) => a.data.order - b.data.order)
   .map((category) => ({
     key: category.data.key,
@@ -1423,14 +1423,7 @@ const initialData = {
       const defaultStoryItems = Array.isArray(initial.defaultStoryItems) ? initial.defaultStoryItems : [];
       const defaultQuoteItems = Array.isArray(initial.defaultQuoteItems) ? initial.defaultQuoteItems : [];
       const defaultAnniversaryItems = Array.isArray(initial.defaultAnniversaryItems) ? initial.defaultAnniversaryItems : [];
-      const defaultGalleryCategories = initial.galleryCategories?.length
-        ? initial.galleryCategories
-        : [
-            { key: "daily", title: "日常", order: 1 },
-            { key: "date", title: "约会", order: 2 },
-            { key: "goods", title: "谷子", order: 3 },
-            { key: "together", title: "合照", order: 4 },
-          ];
+      const defaultGalleryCategories = Array.isArray(initial.galleryCategories) ? initial.galleryCategories : [];
       const defaultGalleryItems = Array.isArray(initial.defaultGalleryItems) ? initial.defaultGalleryItems : [];
 
       function normalizeGalleryDraft(value) {
