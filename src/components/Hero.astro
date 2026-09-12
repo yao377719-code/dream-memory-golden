@@ -1,0 +1,16 @@
+---
+import { profile } from "../data/siteDefaults";
+---
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="profile">
+      <img class="avatar" src={profile.avatar} alt={`${profile.nickname}头像`} data-cloud-image="profile.avatar" />
+      <div>
+        <p class="eyebrow" data-cloud-text="profile.roleName">{profile.roleName}</p>
+        <h1 data-cloud-text="profile.nickname">{profile.nickname}</h1>
+        <p class="intro" data-cloud-text="profile.intro">{profile.intro}</p>
+      </div>
+    </div>
+  </div>
+</section>

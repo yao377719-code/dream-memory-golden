@@ -1,0 +1,49 @@
+---
+import { getCollection } from "astro:content";
+import { isBlankCustomerMode, modules, profile } from "../data/siteDefaults";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+
+const quotes = isBlankCustomerMode ? [] : (await getCollection("quotes")).map((quote) => ({
+  content: quote.data.content,
+  mood: quote.data.mood ?? "",
+}));
+const fallbackQuote = {
+  content: profile.quoteFallback || "这里会随机出现一句语录，可以在后台添加更多句子。",
+  mood: "待添加",
+};
+const quoteData = quotes.length > 0 ? quotes : [fallbackQuote];
+---
+
+<section class="quote-panel side-panel" data-random-quote>
+  <div>
+    <p class="eyebrow" data-cloud-text={editableTitlePaths.quote}>{modules.quoteTitle}</p>
+    <blockquote data-quote-content>{quoteData[0].content}</blockquote>
+  </div>
+  <div class="quote-footer">
+    <span data-quote-mood>{quoteData[0].mood}</span>
+    <button type="button" data-quote-refresh>{profile.quoteButtonText || "换一句"}</button>
+  </div>
+</section>
+<script id="quote-data" type="application/json" set:html={JSON.stringify(quoteData)} is:inline></script>
+<script>
+  type Quote = {
+    content: string;
+    mood: string;
+  };
+
+  const dataNode = document.querySelector("#quote-data");
+  const quotes = (dataNode?.textContent ? JSON.parse(dataNode.textContent) : []) as Quote[];
+  const contentNode = document.querySelector<HTMLElement>("[data-quote-content]");
+  const moodNode = document.querySelector<HTMLElement>("[data-quote-mood]");
+  const refreshNode = document.querySelector("[data-quote-refresh]");
+
+  function renderQuote() {
+    if (quotes.length === 0 || !contentNode || !moodNode) return;
+    const quote = quotes[Math.floor(Math.random() * quotes.length)];
+    contentNode.textContent = quote.content;
+    moodNode.textContent = quote.mood || "语录";
+  }
+
+  renderQuote();
+  refreshNode?.addEventListener("click", renderQuote);
+</script>

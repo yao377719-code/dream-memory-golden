@@ -1,0 +1,845 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "../components/Hero.astro";
+import RandomQuote from "../components/RandomQuote.astro";
+import AboutUs from "../components/AboutUs.astro";
+import GalleryCategories from "../components/GalleryCategories.astro";
+import { isBlankCustomerMode, modules, profile } from "../data/siteDefaults";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+
+const memories = isBlankCustomerMode ? [] : (await getCollection("timeline")).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+const anniversaries = isBlankCustomerMode ? [] : (await getCollection("anniversaries")).sort(
+  (a, b) => a.data.date.valueOf() - b.data.date.valueOf(),
+);
+const calendarEvents = anniversaries.map((item) => ({
+  title: item.data.title ?? item.data.name ?? "未命名纪念日",
+  date: item.data.date.toISOString().slice(0, 10),
+  showOnCalendar: item.data.showOnCalendar,
+  calendarText: item.data.calendarText ?? "",
+  colors: item.data.colors.length > 0 ? item.data.colors : [item.data.calendarColor ?? item.data.color],
+  note: item.data.note ?? "",
+}));
+
+const formatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+const compactFormatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function storyPath(id: string) {
+  return `/story/${id.replace(/\.md$/, "")}/`;
+}
+
+const dayMs = 24 * 60 * 60 * 1000;
+const today = new Date();
+const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+function anniversaryText(date: Date, kind: "since" | "countdown") {
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diff = Math.ceil((target.valueOf() - startOfToday.valueOf()) / dayMs);
+
+  if (kind === "countdown") {
+    return diff >= 0 ? `还有 ${diff} 天` : `已过去 ${Math.abs(diff)} 天`;
+  }
+
+  return diff <= 0 ? `第 ${Math.abs(diff) + 1} 天` : `还有 ${diff} 天开始`;
+}
+---
+
+<BaseLayout current="/" cloudTitlePath={editableTitlePaths.site}>
+  <Hero />
+  <div id="about"></div>
+  {profile.showAbout && <AboutUs />}
+  <main class="main" data-layout-root data-layout={("layoutPreset" in profile && profile.layoutPreset) || "full"}>
+    <div class="content-zone" data-content-zone data-has-story={String(profile.showStory !== false)} data-has-music={String(profile.showMusic !== false)}>
+      <aside class="left-rail" data-music-rail hidden={!profile.showMusic}>
+        <div class="music-slot" data-music-slot></div>
+      </aside>
+      <section class="story-column" data-story-panel hidden={!profile.showStory}>
+        <div class="section-heading-row">
+          <h2 id="story" class="section-title" data-cloud-text={editableTitlePaths.story}>{modules.storyTitle}</h2>
+          <span class="section-count" data-story-count data-base-count={memories.length}>{memories.length} 篇</span>
+        </div>
+        <div class="story-archive-wrap" data-story-archive hidden={memories.length === 0}>
+          <div class="story-archive" data-story-list>
+            {memories.map((memory) => (
+            <a class="story-archive-row" href={storyPath(memory.id)} data-story-source-id={memory.id} data-story-date-value={memory.data.date.toISOString().slice(0, 10)}>
+              <span class="story-date" data-story-date-text>{compactFormatter.format(memory.data.date)}</span>
+              <span class="story-node" aria-hidden="true"></span>
+              <strong>{memory.data.title}</strong>
+            </a>
+            ))}
+          </div>
+        </div>
+        <p class="empty" data-story-empty hidden={memories.length > 0}>还没有时间线记录，可以从后台新增第一条。</p>
+      </section>
+      {
+        profile.showGoodsWall && (
+          <div id="gallery" class="gallery-zone">
+            <GalleryCategories title={modules.galleryTitle} titlePath={editableTitlePaths.gallery} instanceId="home-gallery" />
+          </div>
+        )
+      }
+    </div>
+    <aside class="side" data-side>
+      {profile.showQuotes && <RandomQuote />}
+      <section class="side-panel" data-anniversary-panel hidden={!profile.showAnniversaryList}>
+        <h2 class="section-title" data-cloud-text={editableTitlePaths.anniversary}>{modules.anniversaryTitle}</h2>
+        <div class="anniversary" data-anniversary-list>
+          {
+            anniversaries.length > 0 ? (
+              anniversaries.map((item) => (
+                <div class="anniversary-item">
+                  <div>
+                    <strong>{item.data.title ?? item.data.name ?? "未命名纪念日"}</strong>
+                    <p>{formatter.format(item.data.date)}</p>
+                  </div>
+                  <span class="day-count">{anniversaryText(item.data.date, item.data.kind)}</span>
+                </div>
+              ))
+            ) : (
+              <p class="empty">可以在后台添加纪念日。</p>
+            )
+          }
+        </div>
+      </section>
+      <section class="side-panel mini-calendar" data-mini-calendar hidden={!profile.showCalendar}>
+        <h2 class="section-title" data-cloud-text={editableTitlePaths.calendar}>{modules.calendarTitle}</h2>
+        <div class="mini-calendar-header">
+          <button type="button" data-mini-prev aria-label="上一个月">‹</button>
+          <strong data-mini-title></strong>
+          <button type="button" data-mini-next aria-label="下一个月">›</button>
+        </div>
+        <div class="mini-calendar-weekdays" aria-hidden="true">
+          <span>日</span>
+          <span>一</span>
+          <span>二</span>
+          <span>三</span>
+          <span>四</span>
+          <span>五</span>
+          <span>六</span>
+        </div>
+        <div class="mini-calendar-grid" data-mini-grid></div>
+        <div class="mini-calendar-detail" data-mini-detail>
+          <strong>点击有颜色的日期</strong>
+          <p>查看纪念日标题和备注。</p>
+        </div>
+      </section>
+      <section class="side-panel" data-admin-entry hidden={!profile.showAdminEntry}>
+          <h2 class="section-title" data-cloud-text={editableTitlePaths.admin}>{modules.adminTitle}</h2>
+          <p class="intro">进入后台后，可以编辑网站资料、故事和相册内容。</p>
+          <a class="admin-link" href="/admin/">进入后台</a>
+        </section>
+      </aside>
+  </main>
+  <div class="cloud-story-detail" data-cloud-story-detail hidden></div>
+  <script id="mini-calendar-data" type="application/json" set:html={JSON.stringify(calendarEvents)} is:inline></script>
+  <script>
+    // @ts-nocheck
+    type MiniCalendarEvent = {
+      title: string;
+      date: string;
+      showOnCalendar: boolean;
+      calendarText: string;
+      colors: Array<"rose" | "green" | "gold" | "blue" | "lavender" | "peach" | "berry" | "cream">;
+      note: string;
+    };
+
+    const colorMap = {
+      rose: "#f8dce6",
+      green: "#dceee8",
+      gold: "#f4e3c8",
+      blue: "#dce9f8",
+      lavender: "#e8e0f6",
+      peach: "#f9dfd1",
+      berry: "#ead7ee",
+      cream: "#fff3d8",
+    };
+    const dataNode = document.querySelector("#mini-calendar-data");
+    let events = (dataNode?.textContent ? JSON.parse(dataNode.textContent) : []) as MiniCalendarEvent[];
+    const titleNode = document.querySelector<HTMLElement>("[data-mini-title]");
+    const gridNode = document.querySelector<HTMLElement>("[data-mini-grid]");
+    const detailNode = document.querySelector<HTMLElement>("[data-mini-detail]");
+    const prevNode = document.querySelector("[data-mini-prev]");
+    const nextNode = document.querySelector("[data-mini-next]");
+    const monthFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" });
+    const dateFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+    const current = new Date();
+    let activeYear = current.getFullYear();
+    let activeMonth = current.getMonth();
+
+    function getMonthEvents(month: number) {
+      return events.filter((event) => event.showOnCalendar && new Date(`${event.date}T00:00:00`).getMonth() === month);
+    }
+
+    function eventBackground(dayEvents: MiniCalendarEvent[]) {
+      const colors = [...new Set(dayEvents.flatMap((event) => event.colors))]
+        .map((color) => colorMap[color])
+        .filter(Boolean);
+
+      if (colors.length === 0) return colorMap.rose;
+      if (colors.length === 1) return colors[0];
+      const step = 100 / colors.length;
+      const stops = colors.flatMap((color, index) => [`${color} ${index * step}%`, `${color} ${(index + 1) * step}%`]);
+      return `linear-gradient(135deg, ${stops.join(", ")})`;
+    }
+
+    function showDetail(dayEvents: MiniCalendarEvent[], dateText: string) {
+      if (!detailNode) return;
+      detailNode.textContent = "";
+
+      if (dayEvents.length === 0) {
+        const heading = document.createElement("strong");
+        const text = document.createElement("p");
+        heading.textContent = dateText;
+        text.textContent = "这一天还没有纪念日。";
+        detailNode.append(heading, text);
+        return;
+      }
+
+      for (const event of dayEvents) {
+        const item = document.createElement("article");
+        const heading = document.createElement("strong");
+        const note = document.createElement("p");
+        item.className = "mini-calendar-event";
+        item.style.borderLeftColor = colorMap[event.colors[0] ?? "rose"];
+        heading.textContent = event.title;
+        note.textContent = event.note || dateText;
+        item.append(heading, note);
+        detailNode.append(item);
+      }
+    }
+
+    function renderMiniCalendar() {
+      if (!titleNode || !gridNode) return;
+      const monthStart = new Date(activeYear, activeMonth, 1);
+      const daysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
+      const monthEvents = getMonthEvents(activeMonth);
+      const eventsByDay = new Map<number, MiniCalendarEvent[]>();
+
+      for (const event of monthEvents) {
+        const eventDate = new Date(`${event.date}T00:00:00`);
+        const day = eventDate.getDate();
+        const dayEvents = eventsByDay.get(day) ?? [];
+        dayEvents.push(event);
+        eventsByDay.set(day, dayEvents);
+      }
+
+      titleNode.textContent = monthFormatter.format(monthStart);
+      gridNode.textContent = "";
+
+      for (let blank = 0; blank < monthStart.getDay(); blank += 1) {
+        const cell = document.createElement("span");
+        cell.className = "mini-calendar-day is-empty";
+        gridNode.append(cell);
+      }
+
+      for (let day = 1; day <= daysInMonth; day += 1) {
+        const dayEvents = eventsByDay.get(day) ?? [];
+        const cellDate = new Date(activeYear, activeMonth, day);
+        const dateText = dateFormatter.format(cellDate);
+        const button = document.createElement("button");
+        button.type = "button";
+        const isToday = activeYear === current.getFullYear() && activeMonth === current.getMonth() && day === current.getDate();
+        button.className = `mini-calendar-day${dayEvents.length ? " has-event" : ""}${isToday ? " is-today" : ""}`;
+        const dayNumber = document.createElement("span");
+        dayNumber.className = "mini-calendar-day-number";
+        dayNumber.textContent = String(day);
+        button.append(dayNumber);
+        if (dayEvents.length > 0) {
+          const smallText = document.createElement("span");
+          smallText.className = "mini-calendar-day-text";
+          smallText.textContent = dayEvents[0].calendarText || dayEvents[0].title.slice(0, 4);
+          button.style.background = eventBackground(dayEvents);
+          button.append(smallText);
+        }
+        button.setAttribute(
+          "aria-label",
+          dayEvents.length ? `${dateText}，${dayEvents.map((event) => event.title).join("、")}` : dateText,
+        );
+        button.addEventListener("click", () => showDetail(dayEvents, dateText));
+        gridNode.append(button);
+      }
+
+      if (monthEvents.length > 0) {
+        const firstEventDate = new Date(`${monthEvents[0].date}T00:00:00`);
+        const repeatedDate = new Date(activeYear, activeMonth, firstEventDate.getDate());
+        showDetail(
+          monthEvents.filter((event) => new Date(`${event.date}T00:00:00`).getDate() === firstEventDate.getDate()),
+          dateFormatter.format(repeatedDate),
+        );
+      } else {
+        showDetail([], monthFormatter.format(monthStart));
+      }
+    }
+
+    prevNode?.addEventListener("click", () => {
+      activeMonth -= 1;
+      if (activeMonth < 0) {
+        activeMonth = 11;
+        activeYear -= 1;
+      }
+      renderMiniCalendar();
+    });
+
+    nextNode?.addEventListener("click", () => {
+      activeMonth += 1;
+      if (activeMonth > 11) {
+        activeMonth = 0;
+        activeYear += 1;
+      }
+      renderMiniCalendar();
+    });
+
+    (window as any).__dreamSetCalendarEvents = (nextEvents) => {
+      events = Array.isArray(nextEvents) ? nextEvents : [];
+      renderMiniCalendar();
+    };
+
+    renderMiniCalendar();
+  </script>
+  <script define:vars={{ replaceBuiltInGallery: isBlankCustomerMode }} is:inline>
+    // @ts-nocheck
+    const cloudThemeMap = JSON.parse(document.querySelector("#global-theme-map")?.textContent || "{}");
+
+    function getCloudPath(source, path) {
+      return path.split(".").reduce((value, key) => value?.[key], source);
+    }
+
+    function normalizeCategoryKey(value) {
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    }
+
+    function getCloudCategories(data) {
+      return Array.isArray(data.galleryCategories)
+        ? data.galleryCategories
+            .map((category, index) => ({
+              key: normalizeCategoryKey(category.key) || `category-${index + 1}`,
+              title: String(category.title || "").trim() || `分类 ${index + 1}`,
+              cover: String(category.cover || ""),
+              coverPosition: String(category.coverPosition || "center"),
+              order: Number(category.order ?? index + 1),
+            }))
+            .filter((category) => category.key)
+            .sort((a, b) => a.order - b.order)
+        : [];
+    }
+
+    function getGalleryCategoryKey(item) {
+      if (item.categoryKey) return normalizeCategoryKey(item.categoryKey);
+      const labelMap = {
+        "日常": "daily",
+        "约会": "date",
+        "谷子": "goods",
+        "合照": "together",
+      };
+      return labelMap[item.category] || "goods";
+    }
+
+    function setCategoryLayout(root, count) {
+      const layout = count === 0 ? "zero" : count === 1 ? "one" : count === 2 ? "two" : count === 3 ? "three" : "many";
+      root?.setAttribute("data-category-count", String(count));
+      root?.setAttribute("data-category-layout", layout);
+    }
+
+    function ensureCategoryPanel(category) {
+      const root = document.querySelector("[data-gallery-module='home-gallery']");
+      const entryGrid = root?.querySelector("[data-category-entry-grid]");
+      const detailWrap = root?.querySelector(".category-detail-wrap");
+      if (!root || !entryGrid || !detailWrap) return null;
+
+      let button = root.querySelector(`[data-open-category="${category.key}"]`);
+      if (!button) {
+        button = document.createElement("button");
+        button.className = "category-entry-card";
+        button.type = "button";
+        button.setAttribute("data-open-category", category.key);
+        button.setAttribute("aria-expanded", "false");
+        const image = document.createElement("img");
+        const label = document.createElement("span");
+        const title = document.createElement("strong");
+        const count = document.createElement("small");
+        image.src = "/uploads/memory-placeholder.svg";
+        image.alt = `${category.title}封面`;
+        image.loading = "lazy";
+        count.setAttribute("data-category-card-count", category.key);
+        count.setAttribute("data-base-count", "0");
+        label.append(title, count);
+        button.append(image, label);
+        entryGrid.append(button);
+      }
+
+      let panel = root.querySelector(`[data-category-panel="${category.key}"]`);
+      if (!panel) {
+        panel = document.createElement("section");
+        panel.className = "category-detail-panel";
+        panel.setAttribute("data-category-panel", category.key);
+        panel.hidden = true;
+        const heading = document.createElement("div");
+        const title = document.createElement("h3");
+        const count = document.createElement("span");
+        const grid = document.createElement("div");
+        heading.className = "category-detail-heading";
+        count.setAttribute("data-category-panel-count", category.key);
+        count.setAttribute("data-base-count", "0");
+        grid.className = "goods-grid";
+        heading.append(title, count);
+        panel.append(heading, grid);
+        detailWrap.append(panel);
+      }
+
+      if (!panel.querySelector(".goods-grid")) {
+        panel.querySelector(".empty")?.remove();
+        const grid = document.createElement("div");
+        grid.className = "goods-grid";
+        panel.append(grid);
+      }
+
+      button.hidden = false;
+      panel.hidden = panel.hidden;
+      panel.setAttribute("data-category-title", category.title);
+      button.querySelector("strong").textContent = category.title;
+      const cover = button.querySelector("img");
+      if (cover && category.cover) {
+        cover.src = category.cover;
+        cover.alt = `${category.title}封面`;
+        const positions = { center: "center center", top: "center top", bottom: "center bottom", left: "left center", right: "right center" };
+        cover.style.objectPosition = positions[category.coverPosition] || positions.center;
+      }
+      panel.querySelector("h3").textContent = category.title;
+      const cardCount = button.querySelector(`[data-category-card-count="${category.key}"]`);
+      const panelCount = panel.querySelector(`[data-category-panel-count="${category.key}"]`);
+      const base = Number(cardCount?.getAttribute("data-base-count") || panelCount?.getAttribute("data-base-count") || 0);
+      if (cardCount) cardCount.textContent = `${category.title} ${base}张`;
+      if (panelCount) panelCount.textContent = `${base}张`;
+      return panel;
+    }
+
+    function applyCloudCategories(data) {
+      const hasStoredCategories = Array.isArray(data.galleryCategories);
+      const categories = getCloudCategories(data);
+      const root = document.querySelector("[data-gallery-module='home-gallery']");
+      if (!hasStoredCategories) {
+        const count = root?.querySelectorAll("[data-open-category]:not([hidden])").length || 0;
+        setCategoryLayout(root, count);
+        return { map: new Map(), count, hasStoredCategories: false };
+      }
+      setCategoryLayout(root, categories.length);
+      if (categories.length === 0) {
+        if (replaceBuiltInGallery) {
+          root?.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+        }
+        return { map: new Map(), count: 0, hasStoredCategories: true };
+      }
+      const allowed = new Set(categories.map((category) => category.key));
+      if (replaceBuiltInGallery) {
+        root?.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+      }
+      root?.querySelectorAll("[data-open-category]").forEach((button) => {
+        button.hidden = !allowed.has(button.getAttribute("data-open-category"));
+        button.setAttribute("aria-expanded", "false");
+      });
+      root?.querySelectorAll("[data-category-panel]").forEach((panel) => {
+        panel.hidden = true;
+      });
+      const map = new Map();
+      for (const category of categories) {
+        ensureCategoryPanel(category);
+        map.set(category.key, category);
+      }
+      const first = categories[0];
+      root?.querySelector(`[data-open-category="${first.key}"]`)?.setAttribute("aria-expanded", "true");
+      const firstPanel = root?.querySelector(`[data-category-panel="${first.key}"]`);
+      if (firstPanel) firstPanel.hidden = false;
+      return { map, count: categories.length, hasStoredCategories: true };
+    }
+
+    function applyCloudStories(data) {
+      const stories = Array.isArray(data.storyDraft?.items) ? data.storyDraft.items : [];
+      const deletedStoryIds = new Set(Array.isArray(data.storyDraft?.deletedStoryIds) ? data.storyDraft.deletedStoryIds : []);
+      const list = document.querySelector("[data-story-list]");
+      const countNode = document.querySelector("[data-story-count]");
+      const archive = document.querySelector("[data-story-archive]");
+      const emptyNode = document.querySelector("[data-story-empty]");
+      if (!list) return;
+      const formatter = new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const sortedStories = stories
+        .filter((item) => item?.title && !deletedStoryIds.has(item.sourceId || item.id))
+        .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+      list.querySelectorAll("[data-cloud-story-id]").forEach((row) => row.remove());
+      if (deletedStoryIds.size > 0) {
+        [...list.querySelectorAll("[data-story-source-id]")].forEach((row) => {
+          if (deletedStoryIds.has(row.getAttribute("data-story-source-id") || "")) row.remove();
+        });
+      }
+
+      for (const item of sortedStories) {
+        if (item.sourceId) {
+          [...list.querySelectorAll("[data-story-source-id]")].forEach((row) => {
+            if (row.getAttribute("data-story-source-id") === item.sourceId) row.remove();
+          });
+        }
+        const row = document.createElement("a");
+        const date = document.createElement("span");
+        const node = document.createElement("span");
+        const title = document.createElement("strong");
+        row.className = "story-archive-row";
+        row.href = "#story";
+        row.setAttribute("data-cloud-story-id", item.id || "");
+        row.setAttribute("data-story-date-value", item.date || "");
+        date.className = "story-date";
+        date.setAttribute("data-story-date-text", "");
+        node.className = "story-node";
+        node.setAttribute("aria-hidden", "true");
+        const parsedDate = item.date ? new Date(`${item.date}T00:00:00`) : null;
+        date.textContent = parsedDate && !Number.isNaN(parsedDate.valueOf()) ? formatter.format(parsedDate) : "未定日期";
+        title.textContent = item.title;
+        row.append(date, node, title);
+        list.append(row);
+      }
+
+      [...list.querySelectorAll("[data-story-date-value]")]
+        .sort((a, b) => String(b.getAttribute("data-story-date-value") || "").localeCompare(String(a.getAttribute("data-story-date-value") || "")))
+        .forEach((row) => list.append(row));
+
+      if (countNode) {
+        countNode.textContent = `${list.querySelectorAll("[data-story-date-value]").length} 篇`;
+      }
+      const hasStories = list.querySelectorAll("[data-story-date-value]").length > 0;
+      if (archive) archive.hidden = !hasStories;
+      if (emptyNode) emptyNode.hidden = hasStories;
+
+      const detail = document.querySelector("[data-cloud-story-detail]");
+      window.__dreamCloudStories = sortedStories;
+      if (list.getAttribute("data-cloud-story-bound") === "true") return;
+      list.setAttribute("data-cloud-story-bound", "true");
+      list.addEventListener("click", (event) => {
+        const row = event.target?.closest?.("[data-cloud-story-id]");
+        if (!row || !detail) return;
+        event.preventDefault();
+        const story = window.__dreamCloudStories?.find((item) => item.id === row.getAttribute("data-cloud-story-id"));
+        if (!story) return;
+        detail.textContent = "";
+        const article = document.createElement("article");
+        const close = document.createElement("button");
+        const header = document.createElement("header");
+        const time = document.createElement("time");
+        const heading = document.createElement("h2");
+        const summary = document.createElement("p");
+        const body = document.createElement("div");
+        article.className = "cloud-story-card";
+        close.className = "cloud-story-close";
+        close.type = "button";
+        close.textContent = "关闭";
+        header.className = "story-detail-header";
+        time.textContent = story.date || "未定日期";
+        heading.textContent = story.title;
+        summary.textContent = story.summary || "";
+        body.className = "prose";
+        for (const paragraph of String(story.body || "").split(/\n+/).filter(Boolean)) {
+          const text = document.createElement("p");
+          text.textContent = paragraph;
+          body.append(text);
+        }
+        header.append(time, heading);
+        if (story.summary) header.append(summary);
+        article.append(close, header, body);
+        if (Array.isArray(story.images) && story.images.length > 0) {
+          const grid = document.createElement("div");
+          grid.className = "image-grid story-detail-images";
+          for (const src of story.images) {
+            const image = document.createElement("img");
+            image.src = typeof src === "string" ? src : src.image;
+            image.alt = story.title;
+            image.loading = "lazy";
+            grid.append(image);
+          }
+          article.append(grid);
+        }
+        detail.append(article);
+        detail.hidden = false;
+        detail.scrollIntoView({ behavior: "smooth", block: "center" });
+        close.addEventListener("click", () => {
+          detail.hidden = true;
+        });
+      });
+    }
+
+    function applyCloudVisibility(data, categoryCount) {
+      const profile = data.profile || {};
+      const galleryVisible = profile.showGoodsWall !== false && categoryCount > 0;
+      const visibilityPairs = [
+        [document.querySelector(".about-panel"), profile.showAbout],
+        [document.querySelector("[data-random-quote]"), profile.showQuotes],
+        [document.querySelector("[data-anniversary-panel]"), profile.showAnniversaryList],
+        [document.querySelector("[data-mini-calendar]"), profile.showCalendar],
+        [document.querySelector("[data-gallery-module='home-gallery']")?.closest(".gallery-zone"), galleryVisible],
+        [document.querySelector("[data-story-panel]"), profile.showStory],
+        [document.querySelector("[data-music-rail]"), profile.showMusic],
+        [document.querySelector("[data-admin-entry]"), profile.showAdminEntry],
+      ];
+      for (const [node, value] of visibilityPairs) {
+        if (node) node.hidden = value === false;
+      }
+
+      const content = document.querySelector("[data-content-zone]");
+      const side = document.querySelector("[data-side]");
+      const layoutRoot = document.querySelector("[data-layout-root]");
+      const hasStory = profile.showStory !== false;
+      const hasMusic = profile.showMusic !== false;
+      const hasSideModules = profile.showQuotes !== false
+        || profile.showAnniversaryList !== false
+        || profile.showCalendar !== false
+        || profile.showAdminEntry !== false;
+      if (content) {
+        content.setAttribute("data-has-story", String(hasStory));
+        content.setAttribute("data-has-music", String(hasMusic));
+        content.setAttribute("data-has-gallery", String(galleryVisible));
+        content.hidden = !hasStory && !hasMusic && !galleryVisible;
+      }
+      if (side) side.hidden = !hasSideModules;
+      if (layoutRoot) {
+        const requested = ["full", "compact", "none"].includes(profile.layoutPreset) ? profile.layoutPreset : "full";
+        layoutRoot.setAttribute("data-layout", hasSideModules ? requested : "none");
+      }
+    }
+
+    function getCloudQuotes(data) {
+      const quotes = Array.isArray(data.quotesDraft?.items) ? data.quotesDraft.items : [];
+      const deleted = new Set(Array.isArray(data.quotesDraft?.deletedQuoteIds) ? data.quotesDraft.deletedQuoteIds : []);
+      return quotes
+        .filter((item) => item?.content && !deleted.has(item.sourceId || item.id))
+        .map((item) => ({ content: item.content, mood: item.mood || "语录" }));
+    }
+
+    function applyCloudQuotes(data) {
+      const panel = document.querySelector("[data-random-quote]");
+      if (!panel) return;
+      const quotes = getCloudQuotes(data);
+      const contentNode = panel.querySelector("[data-quote-content]");
+      const moodNode = panel.querySelector("[data-quote-mood]");
+      const refreshNode = panel.querySelector("[data-quote-refresh]");
+      const fallback = data.profile?.quoteFallback || "这里会随机出现一句想说的话。";
+      const quoteData = quotes.length > 0 ? quotes : [{ content: fallback, mood: "待添加" }];
+      const render = () => {
+        const quote = quoteData[Math.floor(Math.random() * quoteData.length)];
+        if (contentNode) contentNode.textContent = quote.content;
+        if (moodNode) moodNode.textContent = quote.mood || "语录";
+      };
+      render();
+      if (refreshNode && refreshNode.getAttribute("data-cloud-quote-bound") !== "true") {
+        refreshNode.setAttribute("data-cloud-quote-bound", "true");
+        refreshNode.addEventListener("click", render);
+      }
+    }
+
+    function getCloudAnniversaries(data) {
+      const items = Array.isArray(data.anniversaryDraft?.items) ? data.anniversaryDraft.items : [];
+      const deleted = new Set(
+        Array.isArray(data.anniversaryDraft?.deletedAnniversaryIds) ? data.anniversaryDraft.deletedAnniversaryIds : [],
+      );
+      return items
+        .filter((item) => item?.title && item?.date && !deleted.has(item.sourceId || item.id))
+        .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+    }
+
+    function getAnniversaryDayText(dateValue, kind = "since") {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const parsed = new Date(`${dateValue}T00:00:00`);
+      if (Number.isNaN(parsed.valueOf())) return "";
+      const target = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+      const diff = Math.ceil((target.valueOf() - today.valueOf()) / dayMs);
+      if (kind === "countdown") return diff >= 0 ? `还有 ${diff} 天` : `已过去 ${Math.abs(diff)} 天`;
+      return diff <= 0 ? `第 ${Math.abs(diff) + 1} 天` : `还有 ${diff} 天开始`;
+    }
+
+    function applyCloudAnniversaries(data) {
+      const list = document.querySelector("[data-anniversary-list]");
+      const items = getCloudAnniversaries(data);
+      if (list) {
+        list.textContent = "";
+        if (items.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "empty";
+          empty.textContent = "可以在后台添加纪念日。";
+          list.append(empty);
+        } else {
+          const formatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+          for (const item of items) {
+            const row = document.createElement("div");
+            const body = document.createElement("div");
+            const title = document.createElement("strong");
+            const date = document.createElement("p");
+            const count = document.createElement("span");
+            const parsed = new Date(`${item.date}T00:00:00`);
+            row.className = "anniversary-item";
+            title.textContent = item.title;
+            date.textContent = Number.isNaN(parsed.valueOf()) ? item.date : formatter.format(parsed);
+            count.className = "day-count";
+            count.textContent = getAnniversaryDayText(item.date, item.kind);
+            body.append(title, date);
+            row.append(body, count);
+            list.append(row);
+          }
+        }
+      }
+
+      const calendarEvents = items
+        .filter((item) => item.showOnCalendar !== false)
+        .map((item) => ({
+          title: item.title,
+          date: item.date,
+          showOnCalendar: true,
+          calendarText: item.calendarText || "",
+          colors: [item.calendarColor || "gold"],
+          note: item.note || "",
+        }));
+      window.__dreamSetCalendarEvents?.(calendarEvents);
+    }
+
+    function applyCloudData(data) {
+      document.querySelectorAll("[data-cloud-image]").forEach((node) => {
+        const value = getCloudPath(data, node.getAttribute("data-cloud-image"));
+        if (value) node.src = value;
+      });
+
+      const covers = data.profile?.covers?.length ? data.profile.covers : data.profile?.cover ? [data.profile.cover] : [];
+      if (data.profile?.cover || covers[0]) {
+        document.querySelector(".site-shell")?.style.setProperty("--cover-image", `url("${data.profile.cover || covers[0]}")`);
+      }
+
+      if (data.profile?.coverPosition) {
+        document.querySelector(".site-shell")?.style.setProperty("--cover-position", data.profile.coverPosition);
+      }
+
+      if (data.profile?.coverScale) {
+        document.querySelector(".site-shell")?.style.setProperty("--cover-size", `${data.profile.coverScale}%`);
+      }
+
+      if (covers.length > 1) {
+        let coverIndex = 0;
+        window.setInterval(() => {
+          coverIndex = (coverIndex + 1) % covers.length;
+          document.querySelector(".site-shell")?.style.setProperty("--cover-image", `url("${covers[coverIndex]}")`);
+        }, Number(data.profile?.coverInterval || 6) * 1000);
+      }
+
+      const theme = window.DreamTheme?.resolveTheme(data.profile, cloudThemeMap);
+      window.DreamTheme?.applyThemeVars(theme, [document.documentElement, document.querySelector(".site-shell")]);
+
+      applyCloudStories(data);
+      applyCloudQuotes(data);
+      applyCloudAnniversaries(data);
+
+      const categoryResult = applyCloudCategories(data);
+      const categoryMap = categoryResult.map;
+      applyCloudVisibility(data, categoryResult.count);
+      const images = data.galleryDraft?.images ?? [];
+      if (images.length === 0) return;
+      const addedByCategory = new Map();
+      const staticGalleryNode = document.querySelector("#home-gallery-gallery-data");
+      const dynamicPhotos = !replaceBuiltInGallery && staticGalleryNode?.textContent
+        ? JSON.parse(staticGalleryNode.textContent)
+        : [];
+
+      for (const item of images) {
+        const originalKey = getGalleryCategoryKey(item);
+        if (categoryResult.hasStoredCategories && !categoryMap.has(originalKey)) continue;
+        const category = categoryMap.size === 0 || categoryMap.has(originalKey)
+          ? { key: originalKey, title: item.category || "未分类" }
+          : { key: "uncategorized", title: "未分类" };
+        if (category.key === "uncategorized") ensureCategoryPanel(category);
+        const key = category.key;
+        const panel = document.querySelector(`[data-category-panel="${key}"]`);
+        const grid = panel?.querySelector(".goods-grid");
+        if (!grid) continue;
+        const card = document.createElement("article");
+        const button = document.createElement("button");
+        const image = document.createElement("img");
+        const body = document.createElement("div");
+        const meta = document.createElement("div");
+        const tag = document.createElement("span");
+        const heading = document.createElement("h3");
+        card.className = "goods-card";
+        button.className = "photo-button";
+        button.type = "button";
+        button.setAttribute("data-gallery-index", String(dynamicPhotos.length));
+        image.src = item.image;
+        image.alt = item.title || "图片";
+        image.loading = "eager";
+        body.className = "goods-body";
+        meta.className = "goods-meta";
+        tag.textContent = categoryMap.get(key)?.title || category.title || item.category || "未分类";
+        heading.textContent = item.title || "";
+        meta.append(tag);
+        body.append(meta);
+        if (item.title) body.append(heading);
+
+        if (item.caption) {
+          const wrap = document.createElement("div");
+          const copy = document.createElement("div");
+          const text = document.createElement("p");
+          const toggle = document.createElement("button");
+          wrap.className = "goods-copy-wrap";
+          copy.className = "goods-copy";
+          text.textContent = item.caption;
+          toggle.className = "goods-copy-toggle";
+          toggle.type = "button";
+          toggle.setAttribute("aria-expanded", "false");
+          toggle.setAttribute("aria-label", "展开文字");
+          copy.append(text);
+          wrap.append(copy, toggle);
+          body.append(wrap);
+        }
+
+        button.append(image);
+        card.append(button, body);
+        grid.append(card);
+        dynamicPhotos.push({ image: item.image, title: item.title || category.title || "图片", caption: item.caption || "" });
+        const categoryCover = document.querySelector(`[data-open-category="${key}"] img`);
+        if (categoryCover && !categoryMap.get(key)?.cover && !addedByCategory.has(key) && categoryCover.src.includes("memory-placeholder")) {
+          categoryCover.src = item.image;
+          categoryCover.alt = `${categoryMap.get(key)?.title || category.title || item.category || "分类"}封面`;
+        }
+        addedByCategory.set(key, (addedByCategory.get(key) || 0) + 1);
+      }
+
+      for (const [key, added] of addedByCategory) {
+        const cardCount = document.querySelector(`[data-category-card-count="${key}"]`);
+        const panelCount = document.querySelector(`[data-category-panel-count="${key}"]`);
+        const title = document.querySelector(`[data-category-panel="${key}"]`)?.getAttribute("data-category-title") || "";
+        for (const node of [cardCount, panelCount]) {
+          if (!node) continue;
+          const base = Number(node.getAttribute("data-base-count") || 0);
+          node.textContent = node === cardCount ? `${title} ${base + added}张` : `${base + added}张`;
+        }
+      }
+      document.dispatchEvent(new CustomEvent("dream-gallery-update", { detail: { instanceId: "home-gallery", photos: dynamicPhotos } }));
+    }
+
+    fetch("/api/site-data")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (result?.ok && result.data) applyCloudData(result.data);
+      })
+      .catch(() => {});
+  </script>
+</BaseLayout>

@@ -1,0 +1,15 @@
+{
+  "name": "dream-memory-test-a1b2c3",
+  "compatibility_date": "2026-07-10",
+  "pages_build_output_dir": "./dist",
+  "vars": {
+    "CUSTOMER_ID": "customer-test-a1b2c3",
+    "PAGES_PROJECT_NAME": "dream-memory-test-a1b2c3"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DREAM_MEMORY_STORE",
+      "id": "00000000000000000000000000000000"
+    }
+  ]
+}

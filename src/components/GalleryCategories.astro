@@ -1,0 +1,293 @@
+---
+import { getCollection } from "astro:content";
+import { isBlankCustomerMode } from "../data/siteDefaults";
+
+type Props = {
+  title?: string;
+  titlePath?: string;
+  instanceId?: string;
+};
+
+const { title, titlePath, instanceId = "gallery" } = Astro.props;
+const categories = (await getCollection("galleryCategories")).sort((a, b) => a.data.order - b.data.order);
+const items = isBlankCustomerMode ? [] : (await getCollection("albums")).sort((a, b) => {
+  if (a.data.featured !== b.data.featured) return a.data.featured ? -1 : 1;
+  const left = a.data.date?.valueOf() ?? 0;
+  const right = b.data.date?.valueOf() ?? 0;
+  return right - left;
+});
+const positionMap = {
+  center: "center center",
+  top: "center top",
+  bottom: "center bottom",
+  left: "left center",
+  right: "right center",
+};
+
+function getObjectPosition(value?: string) {
+  return positionMap[value as keyof typeof positionMap] ?? positionMap.center;
+}
+
+const galleryPhotos = items.flatMap((entry) => {
+  const category = categories.find((item) => item.data.key === entry.data.category);
+  const baseTitle = entry.data.title || category?.data.title || "图片";
+  const baseCaption = entry.data.caption ?? "";
+  const baseSource = entry.data.source ?? "";
+  const photos = [];
+
+  if (entry.data.image) {
+    photos.push({
+      id: `${entry.id}-single`,
+      category: entry.data.category,
+      categoryTitle: category?.data.title ?? entry.data.category,
+      image: entry.data.image,
+      imagePosition: entry.data.imagePosition,
+      title: baseTitle,
+      caption: baseCaption,
+      source: baseSource,
+      featured: entry.data.featured,
+    });
+  }
+
+  for (const [index, image] of entry.data.images.entries()) {
+    photos.push({
+      id: `${entry.id}-batch-${index}`,
+      category: entry.data.category,
+      categoryTitle: category?.data.title ?? entry.data.category,
+      image,
+      imagePosition: entry.data.imagePosition,
+      title: baseTitle,
+      caption: baseCaption,
+      source: baseSource,
+      featured: entry.data.featured,
+    });
+  }
+
+  for (const [index, item] of entry.data.items.entries()) {
+    photos.push({
+      id: `${entry.id}-item-${index}`,
+      category: entry.data.category,
+      categoryTitle: category?.data.title ?? entry.data.category,
+      image: item.image,
+      imagePosition: item.imagePosition,
+      title: item.title || baseTitle,
+      caption: item.caption ?? baseCaption,
+      source: item.source ?? baseSource,
+      featured: entry.data.featured,
+    });
+  }
+
+  return photos;
+});
+
+const itemsByCategory = new Map<string, typeof galleryPhotos>();
+
+for (const item of galleryPhotos) {
+  const group = itemsByCategory.get(item.category) ?? [];
+  group.push(item);
+  itemsByCategory.set(item.category, group);
+}
+
+const categoryCards = categories.map((category) => {
+  const group = itemsByCategory.get(category.data.key) ?? [];
+  return {
+    key: category.data.key,
+    title: category.data.title,
+    cover: isBlankCustomerMode ? "/uploads/memory-placeholder.svg" : category.data.cover || group[0]?.image || "/uploads/memory-placeholder.svg",
+    coverPosition: isBlankCustomerMode ? "center" : category.data.cover ? category.data.coverPosition : group[0]?.imagePosition,
+    count: group.length,
+  };
+});
+const categoryLayout = categoryCards.length === 0
+  ? "zero"
+  : categoryCards.length === 1
+    ? "one"
+    : categoryCards.length === 2
+      ? "two"
+      : categoryCards.length === 3
+        ? "three"
+        : "many";
+---
+
+<section class="goods-section" data-gallery-module={instanceId} data-category-count={categoryCards.length} data-category-layout={categoryLayout}>
+  <div class="section-heading-row">
+    <h2 class="section-title" data-cloud-text={titlePath}>{title}</h2>
+  </div>
+  {
+    categoryCards.length > 0 ? (
+      <>
+        <div class="category-entry-grid" data-category-entry-grid>
+          {categoryCards.map((category) => (
+            <button class="category-entry-card" type="button" data-open-category={category.key} aria-expanded="false">
+              <img
+                src={category.cover}
+                alt={`${category.title}封面`}
+                loading="lazy"
+                style={`object-position: ${getObjectPosition(category.coverPosition)};`}
+              />
+              <span>
+                <strong>{category.title}</strong>
+                <small data-category-card-count={category.key} data-base-count={category.count}>{category.title} {category.count}张</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <div class="category-detail-wrap">
+          {categories.map((category) => {
+            const group = itemsByCategory.get(category.data.key) ?? [];
+            return (
+              <section class="category-detail-panel" data-category-panel={category.data.key} data-category-title={category.data.title} hidden>
+                <div class="category-detail-heading">
+                  <h3>{category.data.title}</h3>
+                  <span data-category-panel-count={category.data.key} data-base-count={group.length}>{group.length}张</span>
+                </div>
+                {group.length > 0 ? (
+                  <div class="goods-grid">
+                    {group.map((item) => {
+                      const galleryIndex = galleryPhotos.findIndex((entry) => entry.id === item.id);
+                      return (
+                        <article class="goods-card" data-category={item.category}>
+                          <button
+                            class="photo-button"
+                            type="button"
+                            data-gallery-index={galleryIndex}
+                            aria-label={`查看大图：${item.title || category.data.title}`}
+                          >
+                            <img
+                              src={item.image}
+                              alt={item.title || category.data.title}
+                              loading="lazy"
+                              style={`object-position: ${getObjectPosition(item.imagePosition)};`}
+                            />
+                          </button>
+                          <div class="goods-body">
+                            <div class="goods-meta">
+                              <span>{category.data.title}</span>
+                              {item.featured && <span>重点</span>}
+                            </div>
+                            {item.title && item.title !== category.data.title && <h3>{item.title}</h3>}
+                            {(item.source || item.caption) && (
+                              <div class="goods-copy-wrap">
+                                <div class="goods-copy" data-goods-copy>
+                                  {item.source && <p>{item.source}</p>}
+                                  {item.caption && <p>{item.caption}</p>}
+                                </div>
+                                <button
+                                  class="goods-copy-toggle"
+                                  type="button"
+                                  data-goods-copy-toggle
+                                  aria-expanded="false"
+                                  aria-label="展开文字"
+                                ></button>
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p class="empty">这个分类还没有图片，可以从后台新增。</p>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      </>
+    ) : (
+      <>
+        <p class="empty">还没有分类，可以先在后台新增相册分类。</p>
+        <div class="category-entry-grid" data-category-entry-grid></div>
+        <div class="category-detail-wrap"></div>
+      </>
+    )
+  }
+</section>
+<div class="lightbox" data-gallery-lightbox={instanceId} hidden>
+  <button class="lightbox-close" type="button" data-gallery-close aria-label="关闭大图">关闭</button>
+  <button class="lightbox-nav lightbox-prev" type="button" data-gallery-prev aria-label="上一张">‹</button>
+  <figure class="lightbox-figure">
+    <img data-gallery-image src="" alt="" />
+    <figcaption data-gallery-caption></figcaption>
+    <a class="lightbox-original" data-gallery-original href="" target="_blank" rel="noopener">查看原图（可放大）</a>
+  </figure>
+  <button class="lightbox-nav lightbox-next" type="button" data-gallery-next aria-label="下一张">›</button>
+</div>
+<script id={`${instanceId}-gallery-data`} type="application/json" set:html={JSON.stringify(galleryPhotos)} is:inline></script>
+<script define:vars={{ instanceId }} is:inline>
+  const root = document.querySelector(`[data-gallery-module="${instanceId}"]`);
+  const dataNode = document.querySelector(`#${instanceId}-gallery-data`);
+  const photos = dataNode?.textContent ? JSON.parse(dataNode.textContent) : [];
+  const lightbox = document.querySelector(`[data-gallery-lightbox="${instanceId}"]`);
+  const image = lightbox?.querySelector("[data-gallery-image]");
+  const caption = lightbox?.querySelector("[data-gallery-caption]");
+  const originalLink = lightbox?.querySelector("[data-gallery-original]");
+  const closeButton = lightbox?.querySelector("[data-gallery-close]");
+  const prevButton = lightbox?.querySelector("[data-gallery-prev]");
+  const nextButton = lightbox?.querySelector("[data-gallery-next]");
+  let currentIndex = 0;
+
+  function openCategory(key) {
+    root?.querySelectorAll("[data-open-category]").forEach((button) => {
+      button.setAttribute("aria-expanded", String(button.getAttribute("data-open-category") === key));
+    });
+    root?.querySelectorAll("[data-category-panel]").forEach((panel) => {
+      panel.hidden = panel.getAttribute("data-category-panel") !== key;
+    });
+  }
+
+  function showPhoto(index) {
+    if (!lightbox || !image || !caption || photos.length === 0) return;
+    currentIndex = (index + photos.length) % photos.length;
+    const photo = photos[currentIndex];
+    image.src = photo.image;
+    image.alt = photo.title;
+    caption.textContent = photo.caption ? `${photo.title}｜${photo.caption}` : photo.title;
+    if (originalLink) originalLink.href = photo.image;
+    lightbox.hidden = false;
+    document.body.classList.add("is-lightbox-open");
+  }
+
+  function closePhoto() {
+    if (!lightbox) return;
+    lightbox.hidden = true;
+    document.body.classList.remove("is-lightbox-open");
+  }
+
+  document.addEventListener("dream-gallery-update", (event) => {
+    if (event.detail?.instanceId !== instanceId || !Array.isArray(event.detail?.photos)) return;
+    photos.splice(0, photos.length, ...event.detail.photos);
+  });
+
+  root?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const categoryButton = target?.closest("[data-open-category]");
+    const imageButton = target?.closest("[data-gallery-index]");
+    const copyButton = target?.closest("[data-goods-copy-toggle]");
+
+    if (categoryButton) {
+      openCategory(categoryButton.getAttribute("data-open-category") || "");
+      return;
+    }
+
+    if (copyButton) {
+      const wrap = copyButton.closest(".goods-copy-wrap");
+      const isExpanded = copyButton.getAttribute("aria-expanded") === "true";
+      copyButton.setAttribute("aria-expanded", String(!isExpanded));
+      copyButton.setAttribute("aria-label", isExpanded ? "展开文字" : "收起文字");
+      wrap?.classList.toggle("is-expanded", !isExpanded);
+      return;
+    }
+
+    if (imageButton) {
+      showPhoto(Number(imageButton.getAttribute("data-gallery-index")));
+    }
+  });
+
+  closeButton?.addEventListener("click", closePhoto);
+  prevButton?.addEventListener("click", () => showPhoto(currentIndex - 1));
+  nextButton?.addEventListener("click", () => showPhoto(currentIndex + 1));
+  lightbox?.addEventListener("click", (event) => {
+    if (event.target === lightbox) closePhoto();
+  });
+</script>

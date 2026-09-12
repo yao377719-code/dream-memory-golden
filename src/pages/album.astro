@@ -1,0 +1,184 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Hero from "../components/Hero.astro";
+import GalleryCategories from "../components/GalleryCategories.astro";
+import { isBlankCustomerMode, modules, profile } from "../data/siteDefaults";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+---
+
+<BaseLayout title={modules.albumPageTitle} current="/album/" cloudTitlePath={editableTitlePaths.albumPage}>
+  <Hero />
+  <main class="main">
+    <section style="grid-column: 1 / -1" data-album-gallery hidden={!profile.showGoodsWall}>
+      <GalleryCategories title={modules.albumPageTitle} titlePath={editableTitlePaths.albumPage} instanceId="album-gallery" />
+    </section>
+  </main>
+  <script define:vars={{ replaceBuiltInGallery: isBlankCustomerMode }} is:inline>
+    function normalizeCategoryKey(value) {
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+    }
+
+    function getCategoryKey(item) {
+      return normalizeCategoryKey(item.categoryKey) || normalizeCategoryKey(item.category) || "uncategorized";
+    }
+
+    function setCategoryLayout(root, count) {
+      const layout = count === 0 ? "zero" : count === 1 ? "one" : count === 2 ? "two" : count === 3 ? "three" : "many";
+      root?.setAttribute("data-category-count", String(count));
+      root?.setAttribute("data-category-layout", layout);
+    }
+
+    function createCategory(root, category) {
+      const entryGrid = root.querySelector("[data-category-entry-grid]");
+      const detailWrap = root.querySelector(".category-detail-wrap");
+      if (!entryGrid || !detailWrap) return null;
+
+      let button = root.querySelector(`[data-open-category="${category.key}"]`);
+      if (!button) {
+        button = document.createElement("button");
+        button.className = "category-entry-card";
+        button.type = "button";
+        button.setAttribute("data-open-category", category.key);
+        button.innerHTML = `<img src="/uploads/memory-placeholder.svg" alt=""><span><strong></strong><small data-category-card-count="${category.key}"></small></span>`;
+        entryGrid.append(button);
+      }
+
+      let panel = root.querySelector(`[data-category-panel="${category.key}"]`);
+      if (!panel) {
+        panel = document.createElement("section");
+        panel.className = "category-detail-panel";
+        panel.setAttribute("data-category-panel", category.key);
+        panel.innerHTML = `<div class="category-detail-heading"><h3></h3><span data-category-panel-count="${category.key}"></span></div><div class="goods-grid"></div>`;
+        detailWrap.append(panel);
+      }
+
+      button.querySelector("strong").textContent = category.title;
+      const cover = button.querySelector("img");
+      if (cover && category.cover) {
+        cover.src = category.cover;
+        cover.alt = `${category.title}封面`;
+        const positions = { center: "center center", top: "center top", bottom: "center bottom", left: "left center", right: "right center" };
+        cover.style.objectPosition = positions[category.coverPosition] || positions.center;
+      }
+      panel.querySelector("h3").textContent = category.title;
+      return { button, panel };
+    }
+
+    function renderCloudGallery(data) {
+      const root = document.querySelector("[data-gallery-module='album-gallery']");
+      if (!root) return;
+      const pageGallery = document.querySelector("[data-album-gallery]");
+      const hasStoredCategories = Array.isArray(data.galleryCategories);
+      const categories = hasStoredCategories
+        ? data.galleryCategories.map((item, index) => ({
+            key: normalizeCategoryKey(item.key) || `category-${index + 1}`,
+            title: String(item.title || "").trim() || `分类 ${index + 1}`,
+            cover: String(item.cover || ""),
+            coverPosition: String(item.coverPosition || "center"),
+          }))
+        : [];
+      const images = Array.isArray(data.galleryDraft?.images) ? data.galleryDraft.images : [];
+      if (hasStoredCategories) setCategoryLayout(root, categories.length);
+      if (hasStoredCategories && categories.length === 0) {
+        if (replaceBuiltInGallery) root.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+        if (pageGallery) pageGallery.hidden = true;
+        return;
+      }
+      if (pageGallery) pageGallery.hidden = data.profile?.showGoodsWall === false;
+      if (!hasStoredCategories && images.length === 0) return;
+
+      if (replaceBuiltInGallery) {
+        root.querySelectorAll("[data-open-category], [data-category-panel]").forEach((node) => node.remove());
+      }
+      const categoryMap = new Map(categories.map((category) => [category.key, category]));
+      if (!hasStoredCategories) {
+        for (const item of images) {
+          const key = getCategoryKey(item);
+          if (!categoryMap.has(key)) categoryMap.set(key, { key, title: item.category || "未分类" });
+        }
+        setCategoryLayout(root, categoryMap.size || root.querySelectorAll("[data-open-category]").length);
+      }
+
+      for (const category of categoryMap.values()) createCategory(root, category);
+      const counts = new Map();
+      const staticGalleryNode = document.querySelector("#album-gallery-gallery-data");
+      const dynamicPhotos = !replaceBuiltInGallery && staticGalleryNode?.textContent
+        ? JSON.parse(staticGalleryNode.textContent)
+        : [];
+      for (const item of images) {
+        const key = getCategoryKey(item);
+        if (hasStoredCategories && !categoryMap.has(key)) continue;
+        const panel = root.querySelector(`[data-category-panel="${key}"]`);
+        const grid = panel?.querySelector(".goods-grid");
+        if (!grid || !item.image) continue;
+        const card = document.createElement("article");
+        card.className = "goods-card";
+        const button = document.createElement("button");
+        button.className = "photo-button";
+        button.type = "button";
+        button.setAttribute("data-gallery-index", String(dynamicPhotos.length));
+        const image = document.createElement("img");
+        image.src = item.image;
+        image.alt = item.title || "相册图片";
+        image.loading = "lazy";
+        button.append(image);
+        card.append(button);
+        if (item.title || item.caption) {
+          const body = document.createElement("div");
+          body.className = "goods-body";
+          if (item.title) {
+            const title = document.createElement("h3");
+            title.textContent = item.title;
+            body.append(title);
+          }
+          if (item.caption) {
+            const caption = document.createElement("p");
+            caption.textContent = item.caption;
+            body.append(caption);
+          }
+          card.append(body);
+        }
+        grid.append(card);
+        dynamicPhotos.push({ image: item.image, title: item.title || categoryMap.get(key)?.title || "图片", caption: item.caption || "" });
+        const categoryCover = root.querySelector(`[data-open-category="${key}"] img`);
+        if (categoryCover && !categoryMap.get(key)?.cover && !counts.has(key)) {
+          categoryCover.src = item.image;
+          categoryCover.alt = `${categoryMap.get(key)?.title || item.category || "分类"}封面`;
+        }
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+
+      for (const [key, category] of categoryMap) {
+        const count = counts.get(key) || 0;
+        const button = root.querySelector(`[data-open-category="${key}"]`);
+        const panel = root.querySelector(`[data-category-panel="${key}"]`);
+        const cardCount = root.querySelector(`[data-category-card-count="${key}"]`);
+        const panelCount = root.querySelector(`[data-category-panel-count="${key}"]`);
+        const baseCount = replaceBuiltInGallery ? 0 : Number(cardCount?.getAttribute("data-base-count") || panelCount?.getAttribute("data-base-count") || 0);
+        if (cardCount) cardCount.textContent = `${category.title} ${baseCount + count}张`;
+        if (panelCount) panelCount.textContent = `${baseCount + count}张`;
+        if (button) button.setAttribute("aria-expanded", "false");
+        if (panel) panel.hidden = true;
+      }
+
+      const firstKey = categoryMap.keys().next().value;
+      if (firstKey) {
+        root.querySelector(`[data-open-category="${firstKey}"]`)?.setAttribute("aria-expanded", "true");
+        const firstPanel = root.querySelector(`[data-category-panel="${firstKey}"]`);
+        if (firstPanel) firstPanel.hidden = false;
+      }
+      document.dispatchEvent(new CustomEvent("dream-gallery-update", { detail: { instanceId: "album-gallery", photos: dynamicPhotos } }));
+    }
+
+    fetch("/api/site-data")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        if (result?.ok && result.data) renderCloudGallery(result.data);
+      })
+      .catch(() => {});
+  </script>
+</BaseLayout>

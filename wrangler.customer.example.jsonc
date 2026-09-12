@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dream-memory-luna-a7k3m",
+  "compatibility_date": "2026-07-10",
+  "pages_build_output_dir": "./dist",
+  "vars": {
+    "CUSTOMER_ID": "customer-luna-a7k3m",
+    "PAGES_PROJECT_NAME": "dream-memory-luna-a7k3m"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "DREAM_MEMORY_STORE",
+      "id": "REPLACE_WITH_CUSTOMER_KV_NAMESPACE_ID"
+    }
+  ]
+}

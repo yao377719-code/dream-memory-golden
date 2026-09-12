@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="背景占位图">
+  <rect width="1600" height="900" fill="#f4e8ee"/>
+  <path d="M0 642c190-107 350-126 480-56 142 77 264 76 365-4 118-93 285-98 501-15 94 36 179 52 254 47v286H0z" fill="#cfe3dc"/>
+  <path d="M178 260c138-118 301-136 489-55 112 48 215 56 309 23 164-58 313-33 446 75" fill="none" stroke="#d85a7f" stroke-width="26" stroke-linecap="round" opacity=".58"/>
+  <circle cx="1274" cy="188" r="92" fill="#f3c36d" opacity=".72"/>
+</svg>

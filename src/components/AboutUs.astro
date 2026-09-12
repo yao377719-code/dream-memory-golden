@@ -1,0 +1,51 @@
+---
+import { about, modules } from "../data/siteDefaults";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+
+const positionMap = {
+  center: "center center",
+  top: "center top",
+  bottom: "center bottom",
+  left: "left center",
+  right: "right center",
+};
+
+function getObjectPosition(value?: string) {
+  return positionMap[value as keyof typeof positionMap] ?? positionMap.center;
+}
+---
+
+<section class="about-panel">
+  <div class="about-story">
+    <p class="eyebrow" data-cloud-text={editableTitlePaths.about}>{modules.aboutTitle}</p>
+    <p data-cloud-text="about.storyIntro">{about.storyIntro}</p>
+  </div>
+  <div class="about-people">
+    <article class="person-card">
+      <img
+        src={about.personAAvatar}
+        alt={`${about.personAName}头像`}
+        loading="lazy"
+        data-cloud-image="about.personAAvatar"
+        style={`object-position: ${getObjectPosition(about.personAAvatarPosition)};`}
+      />
+      <div>
+        <h2 data-cloud-text="about.personAName">{about.personAName}</h2>
+        <p data-cloud-text="about.personABio">{about.personABio}</p>
+      </div>
+    </article>
+    <article class="person-card">
+      <img
+        src={about.personBAvatar}
+        alt={`${about.personBName}头像`}
+        loading="lazy"
+        data-cloud-image="about.personBAvatar"
+        style={`object-position: ${getObjectPosition(about.personBAvatarPosition)};`}
+      />
+      <div>
+        <h2 data-cloud-text="about.personBName">{about.personBName}</h2>
+        <p data-cloud-text="about.personBBio">{about.personBBio}</p>
+      </div>
+    </article>
+  </div>
+</section>

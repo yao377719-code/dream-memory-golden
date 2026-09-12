@@ -1,0 +1,2977 @@
+---
+import { getCollection } from "astro:content";
+import { about, isBlankCustomerMode, modules, profile } from "../data/siteDefaults";
+import { themeMap, themeOptions } from "../data/themes";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+
+const customerId = import.meta.env.PUBLIC_CUSTOMER_ID;
+const pagesProjectName = import.meta.env.PUBLIC_PAGES_PROJECT_NAME;
+const defaultGalleryCategories = (await getCollection("galleryCategories"))
+  .sort((a, b) => a.data.order - b.data.order)
+  .map((category) => ({
+    key: category.data.key,
+    title: category.data.title,
+    cover: category.data.cover || "",
+    coverPosition: category.data.coverPosition || "center",
+    order: category.data.order,
+  }));
+const defaultGalleryItems = isBlankCustomerMode ? [] : (await getCollection("albums"))
+  .sort((a, b) => (b.data.date?.valueOf() ?? 0) - (a.data.date?.valueOf() ?? 0))
+  .flatMap((entry) => {
+    const categoryKey = entry.data.category || "daily";
+    const category = defaultGalleryCategories.find((item) => item.key === categoryKey)?.title || categoryKey;
+    const base = { sourceId: entry.id, categoryKey, category, title: entry.data.title || "", caption: entry.data.caption || "", readonly: true };
+    const photos = [];
+    if (entry.data.image) photos.push({ ...base, image: entry.data.image, id: `${entry.id}-single` });
+    entry.data.images.forEach((image, index) => photos.push({ ...base, image, id: `${entry.id}-batch-${index}` }));
+    entry.data.items.forEach((item, index) => photos.push({
+      ...base,
+      image: item.image,
+      title: item.title || base.title,
+      caption: item.caption || base.caption,
+      id: `${entry.id}-item-${index}`,
+    }));
+    return photos;
+  });
+const defaultStoryItems = isBlankCustomerMode ? [] : (await getCollection("timeline"))
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
+  .map((story) => ({
+    id: `static-${story.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    sourceId: story.id,
+    date: story.data.date.toISOString().slice(0, 10),
+    title: story.data.title,
+    summary: story.data.summary ?? "",
+    mood: story.data.mood ?? "",
+    body: story.body ?? "",
+    images: (story.data.images ?? []).map((item) => (typeof item === "string" ? item : item.image)).filter(Boolean),
+  }));
+const defaultQuoteItems = isBlankCustomerMode ? [] : (await getCollection("quotes"))
+  .map((quote) => ({
+    id: `static-${quote.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    sourceId: quote.id,
+    content: quote.data.content,
+    mood: quote.data.mood ?? "",
+  }));
+const defaultAnniversaryItems = isBlankCustomerMode ? [] : (await getCollection("anniversaries"))
+  .sort((a, b) => a.data.date.valueOf() - b.data.date.valueOf())
+  .map((item) => ({
+    id: `static-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    sourceId: item.id,
+    title: item.data.title ?? item.data.name ?? "",
+    date: item.data.date.toISOString().slice(0, 10),
+    kind: item.data.kind ?? "since",
+    showOnCalendar: item.data.showOnCalendar ?? true,
+    calendarText: item.data.calendarText ?? "",
+    note: item.data.note ?? "",
+    calendarColor: item.data.calendarColor ?? item.data.color ?? "gold",
+  }));
+
+const initialData = {
+  profile,
+  about,
+  modules,
+  galleryCategories: defaultGalleryCategories,
+  defaultGalleryItems,
+  defaultStoryItems,
+  defaultQuoteItems,
+  defaultAnniversaryItems,
+  storyDraft: { items: defaultStoryItems, deletedStoryIds: [] },
+  quotesDraft: { items: defaultQuoteItems, deletedQuoteIds: [] },
+  anniversaryDraft: { items: defaultAnniversaryItems, deletedAnniversaryIds: [] },
+  galleryDraft: { images: [] },
+  customerMode: isBlankCustomerMode ? "blank" : "demo",
+  customerId,
+};
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>网站管理后台</title>
+    <script is:inline src="/theme-utils.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #27222a;
+        --muted: #746977;
+        --line: #e8dfe5;
+        --paper: #fffafc;
+        --accent: #8165b1;
+        --accent-soft: #eee6fb;
+        --accent-hover: #f6f1ff;
+        --accent-strong: #694aa0;
+        --accent-shadow: rgba(129, 101, 177, 0.24);
+        --button-text: #ffffff;
+        --site-bg: #f5f1f7;
+        --site-bg-soft: #ebe4f0;
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow-x: hidden;
+        color: var(--ink);
+        background: linear-gradient(180deg, var(--site-bg), var(--site-bg-soft));
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      .admin-shell {
+        width: min(860px, calc(100% - 28px));
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 24px 0 42px;
+      }
+
+      .admin-header,
+      .admin-card,
+      .login-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: 0 18px 42px rgba(92, 70, 82, 0.12);
+      }
+
+      .admin-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 16px;
+        padding: 16px;
+      }
+
+      .admin-header h1,
+      .login-card h1 {
+        margin: 0 0 6px;
+        font-size: 24px;
+      }
+
+      .admin-header p,
+      .login-card p,
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .login-wrap {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .login-card {
+        width: min(420px, 100%);
+        padding: 22px;
+      }
+
+      .login-card form,
+      .admin-form,
+      .field,
+      .image-preview-field {
+        display: grid;
+        gap: 12px;
+      }
+
+      .field {
+        gap: 7px;
+      }
+
+      label {
+        font-weight: 800;
+      }
+
+      input,
+      textarea,
+      select {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      textarea {
+        min-height: 108px;
+        resize: vertical;
+        line-height: 1.7;
+      }
+
+      .primary-button,
+      .ghost-button,
+      .ghost-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+        padding: 0 16px;
+        border-radius: 9px;
+        cursor: pointer;
+        font-weight: 850;
+        text-decoration: none;
+      }
+
+      .primary-button {
+        border: 0;
+        background: var(--accent);
+        color: var(--button-text);
+      }
+
+      .theme-customizer {
+        display: grid;
+        gap: 14px;
+        margin: 14px 0;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: color-mix(in srgb, var(--paper) 88%, white);
+      }
+
+      .theme-customizer h3,
+      .theme-customizer p {
+        margin: 0;
+      }
+
+      .theme-inputs {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .color-picker-field input[type="color"] {
+        width: 100%;
+        min-height: 48px;
+        padding: 4px;
+        cursor: pointer;
+      }
+
+      .theme-preview {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--paper);
+        color: var(--ink);
+      }
+
+      .theme-preview-swatch {
+        min-width: 92px;
+        min-height: 40px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 9px;
+        background: var(--accent);
+        color: var(--button-text);
+        font-weight: 850;
+      }
+
+      .theme-actions,
+      .category-order-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .theme-error {
+        min-height: 20px;
+        color: #9b3048;
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .module-guidance {
+        margin: 14px 0 0;
+        padding: 12px 14px;
+        border-left: 4px solid var(--accent);
+        border-radius: 8px;
+        background: var(--accent-hover);
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .ghost-button,
+      .ghost-link {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .admin-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .admin-tabs {
+        position: sticky;
+        top: 0;
+        z-index: 3;
+        display: flex;
+        overflow-x: auto;
+        gap: 8px;
+        padding: 8px 0;
+        background: linear-gradient(180deg, var(--site-bg) 74%, rgba(255, 255, 255, 0));
+      }
+
+      .admin-tabs button {
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--muted);
+        cursor: pointer;
+        font-weight: 800;
+        text-align: left;
+        white-space: nowrap;
+        padding: 0 12px;
+      }
+
+      .admin-tabs button[aria-selected="true"] {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .admin-card {
+        display: none;
+        overflow: hidden;
+        padding: 18px;
+      }
+
+      .admin-card.is-active {
+        display: block;
+      }
+
+      .admin-card h2 {
+        margin: 0 0 14px;
+        font-size: 21px;
+      }
+
+      .form-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .image-preview {
+        width: 104px;
+        aspect-ratio: 1;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+      }
+
+      .image-preview.is-wide {
+        width: 100%;
+        aspect-ratio: 16 / 7;
+      }
+
+      .image-preview img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .save-bar {
+        position: sticky;
+        bottom: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 16px;
+        pointer-events: none;
+      }
+
+      .save-bar[hidden] {
+        display: none;
+      }
+
+      .save-bar button {
+        pointer-events: auto;
+      }
+
+      .toast {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 10;
+        max-width: min(320px, calc(100% - 32px));
+        padding: 12px 14px;
+        border-radius: 10px;
+        background: #27222a;
+        color: #fff;
+        box-shadow: 0 16px 38px rgba(0, 0, 0, 0.18);
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+
+      .batch-preview {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      .batch-preview figure {
+        display: grid;
+        min-width: 0;
+        gap: 6px;
+        margin: 0;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        cursor: pointer;
+      }
+
+      .batch-preview img {
+        width: 100%;
+        max-width: 100%;
+        height: 86px;
+        aspect-ratio: 1;
+        border-radius: 10px;
+        object-fit: cover;
+      }
+
+      .batch-preview figcaption {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .batch-preview-controls {
+        display: grid;
+        gap: 6px;
+      }
+
+      .batch-preview-controls input,
+      .batch-preview-controls select {
+        min-height: 34px;
+        padding: 6px 7px;
+        font-size: 12px;
+      }
+
+      .small-danger {
+        min-height: 32px;
+        border: 1px solid var(--accent-soft);
+        border-radius: 8px;
+        background: var(--accent-hover);
+        color: var(--accent-strong);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .category-manager {
+        display: grid;
+        gap: 8px;
+        margin: 12px 0 16px;
+      }
+
+      .category-row {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr) 58px;
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .category-cover-editor { display: grid; gap: 6px; }
+      .category-cover-editor img { width: 92px; height: 70px; border-radius: 9px; object-fit: cover; background: var(--accent-soft); }
+      .category-cover-editor input { width: 92px; min-height: 0; font-size: 11px; }
+      .category-fields { display: grid; gap: 7px; }
+
+      .category-row input {
+        min-height: 40px;
+      }
+
+      .category-row button {
+        min-height: 40px;
+        padding: 0 8px;
+        border: 1px solid var(--accent-soft);
+        border-radius: 8px;
+        background: var(--accent-hover);
+        color: var(--accent-strong);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      @media (max-width: 560px) {
+        .theme-inputs,
+        .theme-preview { grid-template-columns: 1fr; }
+        .category-row { grid-template-columns: 78px minmax(0, 1fr); }
+        .category-cover-editor img { width: 78px; height: 64px; }
+        .category-cover-editor input { width: 78px; }
+        .category-row > .small-danger { grid-column: 1 / -1; }
+      }
+
+      .category-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .switch-list,
+      .quote-manager,
+      .anniversary-manager {
+        display: grid;
+        gap: 10px;
+      }
+
+      .switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .switch-row input {
+        width: 22px;
+        min-height: 22px;
+        accent-color: var(--accent);
+      }
+
+      .quote-edit-card,
+      .anniversary-edit-card {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .quote-row,
+      .anniversary-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+      }
+
+      .quote-row textarea,
+      .anniversary-row textarea {
+        min-height: 76px;
+      }
+
+      @media (max-width: 720px) {
+        .admin-shell {
+          width: min(560px, calc(100% - 24px));
+          max-width: calc(100vw - 24px);
+          padding-top: 14px;
+        }
+
+        .admin-header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .admin-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .admin-tabs {
+          display: flex;
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+
+        .admin-tabs button {
+          flex: 0 0 auto;
+          white-space: nowrap;
+        }
+
+        .form-row {
+          grid-template-columns: 1fr;
+        }
+
+        .batch-preview {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+    </style>
+    <style is:global>
+      .category-manager {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+        gap: 10px;
+        margin: 12px 0 16px;
+      }
+
+      .category-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-content: start;
+        gap: 7px;
+        min-width: 0;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--paper);
+      }
+
+      .category-cover-editor {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .category-cover-editor img {
+        display: block;
+        width: 100%;
+        height: 104px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--accent-soft);
+        object-fit: cover;
+      }
+
+      .category-cover-editor input[type="file"] {
+        width: 100%;
+        min-width: 0;
+        min-height: 32px;
+        padding: 4px;
+        overflow: hidden;
+        font-size: 10px;
+      }
+
+      .category-cover-editor input[type="file"]::file-selector-button {
+        min-height: 24px;
+        margin-right: 5px;
+        padding: 2px 6px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--ink);
+        font-size: 10px;
+      }
+
+      .category-fields {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .category-row input:not([type="file"]),
+      .category-row select {
+        width: 100%;
+        min-width: 0;
+        min-height: 32px;
+        padding: 5px 7px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        font-size: 12px;
+        line-height: 1.3;
+      }
+
+      .category-row button {
+        min-height: 30px;
+        padding: 4px 7px;
+        border: 1px solid var(--accent-soft);
+        border-radius: 8px;
+        background: var(--accent-hover);
+        color: var(--accent-strong);
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      @media (max-width: 560px) {
+        .category-manager {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+        }
+
+        .category-cover-editor img {
+          height: 92px;
+        }
+      }
+
+      .story-manager {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .story-edit-card {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .story-edit-card summary {
+        cursor: pointer;
+        font-weight: 850;
+      }
+
+      .story-image-preview,
+      .story-row-images {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+        gap: 6px;
+      }
+
+      .story-image-preview img,
+      .story-row-images img {
+        width: 100%;
+        height: 58px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        object-fit: cover;
+      }
+
+      .story-row {
+        display: grid;
+        grid-template-columns: minmax(86px, 0.8fr) minmax(0, 1.2fr) 58px;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .story-row.is-edit {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .story-row input,
+      .story-row textarea {
+        min-height: 38px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .story-row textarea {
+        min-height: 92px;
+        resize: vertical;
+      }
+
+      .story-row button {
+        min-height: 38px;
+        padding: 0 8px;
+        border: 1px solid var(--accent-soft);
+        border-radius: 8px;
+        background: var(--accent-hover);
+        color: var(--accent-strong);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .story-row-image {
+        display: grid;
+        gap: 3px;
+      }
+
+      .story-row-image button {
+        min-height: 26px;
+        font-size: 10px;
+      }
+
+      .batch-preview {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)) !important;
+        gap: 8px !important;
+        overflow: hidden;
+      }
+
+      .batch-preview figure {
+        display: grid !important;
+        min-width: 0;
+        max-width: 100%;
+        gap: 3px;
+        margin: 0;
+        padding: 5px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .batch-preview img {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        height: 62px;
+        object-fit: cover;
+        border-radius: 8px;
+      }
+
+      .batch-preview figcaption {
+        font-size: 10px;
+      }
+
+      .gallery-count-summary {
+        margin: 12px 0 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .batch-preview-meta {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 3px;
+      }
+
+      .batch-category-badge,
+      .batch-source-badge {
+        overflow: hidden;
+        padding: 2px 4px;
+        border-radius: 999px;
+        font-size: 9px;
+        font-weight: 800;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .batch-category-badge {
+        min-width: 0;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+
+      .batch-source-badge {
+        flex: 0 0 auto;
+        background: var(--site-bg-soft);
+        color: var(--muted);
+      }
+
+      .batch-source-badge.is-cloud {
+        background: var(--accent);
+        color: var(--button-text);
+      }
+
+      .batch-preview figure.is-readonly {
+        cursor: default;
+      }
+
+      .batch-preview-controls {
+        display: none !important;
+        min-width: 0;
+        gap: 3px;
+      }
+
+      .batch-preview figure.is-editing {
+        grid-column: span 2;
+        cursor: default;
+        box-shadow: 0 0 0 2px var(--accent-soft);
+      }
+
+      .batch-preview figure.is-editing .batch-preview-controls {
+        display: grid !important;
+      }
+
+      .batch-preview-controls input,
+      .batch-preview-controls select {
+        width: 100% !important;
+        max-width: 100%;
+        box-sizing: border-box;
+        min-height: 26px;
+        padding: 4px 5px;
+        font-size: 10px;
+      }
+
+      .batch-preview-controls .small-danger {
+        width: 100%;
+        min-height: 26px;
+        padding: 0 5px;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 430px) {
+        .batch-preview {
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          gap: 6px !important;
+        }
+
+        .batch-preview img { height: 54px; }
+
+        .story-row {
+          grid-template-columns: minmax(0, 1fr) 58px;
+        }
+
+        .story-row input[type="date"] {
+          grid-column: 1 / -1;
+        }
+
+        .story-row-images {
+          grid-column: 1 / -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="login-wrap" data-login>
+      <section class="login-card">
+        <h1>进入后台</h1>
+        <p>登录后可以编辑网站资料、故事和相册内容。</p>
+        <form data-login-form>
+          <label class="field">
+            后台密码
+            <input type="password" name="password" inputmode="numeric" autocomplete="current-password" placeholder="请输入后台密码" />
+          </label>
+          <button class="primary-button" type="submit">进入</button>
+          <p class="hint">请使用为你分配的后台密码登录。</p>
+        </form>
+      </section>
+    </div>
+
+    <main class="admin-shell" data-admin hidden>
+      <header class="admin-header">
+        <div>
+          <h1>网站管理后台</h1>
+          <p>编辑内容后保存，前台网站会同步更新。</p>
+        </div>
+        <div class="header-actions">
+          <a class="ghost-link" href="/">看首页</a>
+          <button class="ghost-button" type="button" data-logout>退出</button>
+        </div>
+      </header>
+
+      <div class="admin-grid">
+        <nav class="admin-tabs" aria-label="后台模块">
+          <button type="button" aria-selected="true" data-tab="profile">首页资料</button>
+          <button type="button" aria-selected="false" data-tab="about">关于我们</button>
+          <button type="button" aria-selected="false" data-tab="stories">我们的故事</button>
+          <button type="button" aria-selected="false" data-tab="modules">模块标题</button>
+          <button type="button" aria-selected="false" data-tab="music">音乐</button>
+          <button type="button" aria-selected="false" data-tab="quotes">想对你说</button>
+          <button type="button" aria-selected="false" data-tab="anniversaries">纪念日</button>
+          <button type="button" aria-selected="false" data-tab="gallery">图片管理</button>
+        </nav>
+
+        <form class="admin-form" data-admin-form>
+          <section class="admin-card is-active" data-panel="profile">
+            <h2>首页资料</h2>
+            <div class="form-row">
+              <label class="field">
+                网站昵称
+                <input name={editableTitlePaths.site} />
+              </label>
+              <label class="field">
+                角色名或关系提示
+                <input name="profile.roleName" />
+              </label>
+            </div>
+            <label class="field">
+              主题色
+              <select name="profile.themeColor">
+                {themeOptions.map(([value, label]) => <option value={value}>{label}</option>)}
+              </select>
+            </label>
+            <section class="theme-customizer" aria-labelledby="custom-theme-title">
+              <div>
+                <h3 id="custom-theme-title">自定义主题色</h3>
+                <p class="hint">用调色盘选择一个主色，页面背景、卡片、按钮、边框和文字会自动搭配。</p>
+              </div>
+              <div class="theme-inputs">
+                <label class="field color-picker-field">
+                  调色盘
+                  <input type="color" data-custom-theme-picker value="#B98231" />
+                </label>
+                <label class="field">
+                  Hex（可选）
+                  <input data-custom-theme-hex inputmode="text" autocomplete="off" maxlength="7" placeholder="#9AFF9A 或 9AFF9A" />
+                </label>
+              </div>
+              <p class="theme-error" data-custom-theme-error aria-live="polite"></p>
+              <div class="theme-preview" data-theme-preview>
+                <div>
+                  <strong>实时预览</strong>
+                  <p class="hint">浅背景、正文和按钮文字会自动保证清晰可读。</p>
+                </div>
+                <span class="theme-preview-swatch">按钮示例</span>
+              </div>
+              <div class="theme-actions">
+                <button class="ghost-button" type="button" data-restore-preset-theme>恢复预设主题</button>
+                <button class="ghost-button" type="button" data-cancel-theme-change>取消未保存修改</button>
+              </div>
+            </section>
+            <label class="field">
+              页面布局
+              <select name="profile.layoutPreset">
+                <option value="full">完整侧栏</option>
+                <option value="compact">精简侧栏</option>
+                <option value="none">无侧栏（模块移到主内容下方）</option>
+              </select>
+              <span class="hint">无侧栏时主内容会在限制宽度内居中，不会铺满整个屏幕。</span>
+            </label>
+            <label class="field">
+              首页简介
+              <textarea name="profile.intro"></textarea>
+            </label>
+            <div class="switch-list">
+              <label class="switch-row">
+                <span>显示关于我们</span>
+                <input type="checkbox" name="profile.showAbout" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示我们的故事</span>
+                <input type="checkbox" name="profile.showStory" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示音乐</span>
+                <input type="checkbox" name="profile.showMusic" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示想对你说</span>
+                <input type="checkbox" name="profile.showQuotes" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示纪念日</span>
+                <input type="checkbox" name="profile.showAnniversaryList" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示日历</span>
+                <input type="checkbox" name="profile.showCalendar" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示周边与相册</span>
+                <input type="checkbox" name="profile.showGoodsWall" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示管理入口</span>
+                <input type="checkbox" name="profile.showAdminEntry" data-boolean-field />
+              </label>
+            </div>
+            <p class="module-guidance">
+              不需要的模块可以关闭。关闭只影响前台展示，不会自动删除已经保存的故事、图片、语录或纪念日内容。
+            </p>
+            <div class="form-row">
+              <label class="image-preview-field">
+                头像图片
+                <span class="hint">手机上点这里可以从相册选图，先看上传手感。</span>
+                <span class="image-preview"><img data-preview="profile.avatar" alt="" /></span>
+                <input type="file" accept="image/*,.heic,.heif" data-image-input="profile.avatar" />
+              </label>
+              <label class="image-preview-field">
+                首页背景图
+                <span class="hint">建议横图，可以调显示位置和大小。</span>
+                <span class="image-preview is-wide"><img data-preview="profile.cover" alt="" /></span>
+                <input type="file" accept="image/*,.heic,.heif" data-image-input="profile.cover" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="field">
+                背景显示位置
+                <select name="profile.coverPosition">
+                  <option value="center center">居中</option>
+                  <option value="center top">偏上</option>
+                  <option value="center bottom">偏下</option>
+                  <option value="left center">偏左</option>
+                  <option value="right center">偏右</option>
+                </select>
+              </label>
+              <label class="field">
+                背景大小比例
+                <select name="profile.coverScale">
+                  <option value="">自动铺满</option>
+                  <option value="100">100%</option>
+                  <option value="115">115%</option>
+                  <option value="130">130%</option>
+                  <option value="150">150%</option>
+                  <option value="170">170%</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="image-preview-field">
+                轮播背景图
+                <span class="hint">可以一次选多张，首页头图会自动轮流换。</span>
+                <input type="file" accept="image/*,.heic,.heif" multiple data-cover-batch-input />
+              </label>
+              <label class="field">
+                轮播间隔秒数
+                <input name="profile.coverInterval" type="number" min="3" max="30" placeholder="6" />
+              </label>
+            </div>
+            <button class="ghost-button" type="button" data-clear-covers>清空轮播背景图</button>
+            <div class="batch-preview" data-cover-preview></div>
+          </section>
+
+          <section class="admin-card" data-panel="about">
+            <h2>关于我们</h2>
+            <label class="field">
+              故事引言
+              <textarea name="about.storyIntro"></textarea>
+            </label>
+            <div class="form-row">
+              <label class="field">
+                左边称呼
+                <input name="about.personAName" />
+              </label>
+              <label class="field">
+                右边称呼
+                <input name="about.personBName" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="field">
+                左边简介
+                <textarea name="about.personABio"></textarea>
+              </label>
+              <label class="field">
+                右边简介
+                <textarea name="about.personBBio"></textarea>
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="image-preview-field">
+                左边头像
+                <span class="image-preview"><img data-preview="about.personAAvatar" alt="" /></span>
+                <input type="file" accept="image/*,.heic,.heif" data-image-input="about.personAAvatar" />
+              </label>
+              <label class="image-preview-field">
+                右边头像
+                <span class="image-preview"><img data-preview="about.personBAvatar" alt="" /></span>
+                <input type="file" accept="image/*,.heic,.heif" data-image-input="about.personBAvatar" />
+              </label>
+            </div>
+          </section>
+
+          <section class="admin-card" data-panel="stories">
+            <h2>我们的故事</h2>
+            <p class="hint">新增或编辑故事后，首页时间线会同步更新。</p>
+            <label class="switch-row">
+              <span>显示这个模块</span>
+              <input type="checkbox" name="profile.showStory" data-boolean-field />
+            </label>
+            <div class="form-row">
+              <label class="field">
+                故事日期
+                <input type="date" data-story-date />
+              </label>
+              <label class="field">
+                故事标题
+                <input data-story-title placeholder="例如：第一次一起看烟花" />
+              </label>
+            </div>
+            <label class="field">
+              故事简介
+              <textarea data-story-summary placeholder="可选，写一句首页列表或以后详情页会用到的话。"></textarea>
+            </label>
+            <label class="field">
+              故事正文
+              <textarea data-story-body placeholder="正文可以写多段，保存后点首页新增的故事可以查看。"></textarea>
+            </label>
+            <label class="image-preview-field">
+              故事配图
+              <span class="hint">可以一次选择多张；优先保留原图清晰度，超大文件会自动安全压缩。</span>
+              <input type="file" accept="image/*,.heic,.heif" multiple data-story-images />
+            </label>
+            <div class="story-image-preview" data-story-image-preview></div>
+            <button class="ghost-button" type="button" data-add-story>添加到故事列表</button>
+            <div class="story-manager" data-story-manager></div>
+          </section>
+
+          <section class="admin-card" data-panel="modules">
+            <h2>模块标题</h2>
+            <div class="form-row">
+              <label class="field">
+                关于我们标题
+                <input name={editableTitlePaths.about} />
+              </label>
+              <label class="field">
+                我们的故事标题
+                <input name={editableTitlePaths.story} />
+              </label>
+              <label class="field">
+                周边与相册标题
+                <input name={editableTitlePaths.gallery} />
+              </label>
+              <label class="field">
+                管理入口标题
+                <input name={editableTitlePaths.admin} />
+              </label>
+              <label class="field">
+                相册页标题
+                <input name={editableTitlePaths.albumPage} />
+              </label>
+              <label class="field">
+                想对你说标题
+                <input name={editableTitlePaths.quote} />
+              </label>
+              <label class="field">
+                纪念日标题
+                <input name={editableTitlePaths.anniversary} />
+              </label>
+              <label class="field">
+                日历标题
+                <input name={editableTitlePaths.calendar} />
+              </label>
+            </div>
+          </section>
+
+          <section class="admin-card" data-panel="music">
+            <h2>音乐模块</h2>
+            <p class="hint">网易云歌曲分享链接里一般带有 id，直接粘贴整条链接就行；也可以填网易云歌曲 ID、QQ 音乐链接，或者能直接播放的音频链接。</p>
+            <label class="switch-row">
+              <span>显示这个模块</span>
+              <input type="checkbox" name="profile.showMusic" data-boolean-field />
+            </label>
+            <div class="form-row">
+              <label class="field">
+                模块标题
+                <input name={editableTitlePaths.music} placeholder="例如：音乐" />
+              </label>
+              <label class="field">
+                音乐链接或歌曲 ID
+                <input name="profile.musicUrl" placeholder="例如：https://music.163.com/song?id=xxxx" />
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="field">
+                歌曲名
+                <input name="profile.musicTitle" placeholder="例如：写给你的一首歌" />
+              </label>
+              <label class="field">
+                歌手/备注
+                <input name="profile.musicArtist" placeholder="例如：歌手名 / 想写的话" />
+              </label>
+            </div>
+            <label class="image-preview-field">
+              音乐封面
+              <span class="hint">会显示在音乐卡片左边，不填时默认使用首页头像。</span>
+              <span class="image-preview"><img data-preview="profile.musicCover" alt="" /></span>
+              <input type="file" accept="image/*,.heic,.heif" data-image-input="profile.musicCover" />
+            </label>
+            <p class="hint">手机浏览器通常不允许自动播放，访客需要自己点一下播放。QQ 音乐有些歌曲不开放网页直放，播不了时换网易云链接更稳。</p>
+          </section>
+
+          <section class="admin-card" data-panel="quotes">
+            <h2>想对你说</h2>
+            <p class="hint">可以写多句话，前台会随机展示其中一句。</p>
+            <label class="switch-row">
+              <span>显示这个模块</span>
+              <input type="checkbox" name="profile.showQuotes" data-boolean-field />
+            </label>
+            <div class="form-row">
+              <label class="field">
+                按钮文案
+                <input name="profile.quoteButtonText" placeholder="例如：换一句" />
+              </label>
+              <label class="field">
+                没有语录时的默认文案
+                <input name="profile.quoteFallback" />
+              </label>
+            </div>
+            <label class="field">
+              新增一句话
+              <textarea data-quote-content placeholder="写一句想对 TA 说的话"></textarea>
+            </label>
+            <label class="field">
+              标签/心情
+              <input data-quote-mood placeholder="例如：温柔、日常、甜甜的" />
+            </label>
+            <button class="ghost-button" type="button" data-add-quote>添加到语录列表</button>
+            <div class="quote-manager" data-quote-manager></div>
+          </section>
+
+          <section class="admin-card" data-panel="anniversaries">
+            <h2>纪念日与日历</h2>
+            <p class="hint">添加纪念日后，前台会显示第几天；勾选日历标记后，也会出现在小日历里。</p>
+            <div class="switch-list">
+              <label class="switch-row">
+                <span>显示纪念日模块</span>
+                <input type="checkbox" name="profile.showAnniversaryList" data-boolean-field />
+              </label>
+              <label class="switch-row">
+                <span>显示日历模块</span>
+                <input type="checkbox" name="profile.showCalendar" data-boolean-field />
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="field">
+                纪念日名称
+                <input data-anniversary-title placeholder="例如：喜欢上你的那一天" />
+              </label>
+              <label class="field">
+                日期
+                <input type="date" data-anniversary-date />
+              </label>
+            </div>
+            <label class="switch-row">
+              <span>在日历上标记这一天</span>
+              <input type="checkbox" data-anniversary-show-calendar checked />
+            </label>
+            <div class="form-row">
+              <label class="field">
+                日历短标记
+                <input data-anniversary-calendar-text placeholder="例如：相遇" />
+              </label>
+              <label class="field">
+                备注
+                <input data-anniversary-note placeholder="可选，显示在日历详情里" />
+              </label>
+            </div>
+            <button class="ghost-button" type="button" data-add-anniversary>添加到纪念日列表</button>
+            <div class="anniversary-manager" data-anniversary-manager></div>
+          </section>
+
+          <section class="admin-card" data-panel="gallery">
+            <h2>图片管理</h2>
+            <p class="hint">相册分类可以新增、改名、排序和删除。分类为 0 时前台不会显示整个相册模块，也不会留下空白。</p>
+            <p class="module-guidance">删除有图片的分类会要求二次确认；分类图片不会被静默删除，而会保留在图片管理中并标记为“未分类”。</p>
+            <div class="category-manager" data-category-manager></div>
+            <div class="category-actions">
+              <button class="ghost-button" type="button" data-add-category>新增分类</button>
+            </div>
+            <div class="form-row">
+              <label class="field">
+                图片分类
+                <select data-batch-category></select>
+              </label>
+              <label class="field">
+                这一批图片标题
+                <input data-batch-title placeholder="例如：生日谷、约会照片" />
+              </label>
+            </div>
+            <label class="field">
+              这一批图片说明
+              <textarea data-batch-caption placeholder="可选，写给自己看的备注。"></textarea>
+            </label>
+            <label class="image-preview-field">
+              批量选择图片
+              <span class="hint">可以一次选择多张图片；优先保留原图清晰度，超大文件会自动安全压缩，前台大图可继续打开原图查看。</span>
+              <input type="file" accept="image/*,.heic,.heif" multiple data-batch-input />
+            </label>
+            <p class="hint" data-batch-upload-status role="status" aria-live="polite">等待选择图片</p>
+            <button class="ghost-button" type="button" data-clear-batch>清空云端上传列表</button>
+            <p class="gallery-count-summary" data-gallery-count-summary></p>
+            <div class="batch-preview" data-batch-preview></div>
+          </section>
+
+          <div class="save-bar" data-save-bar>
+            <button class="ghost-button" type="button" data-preview-home>保存并预览首页</button>
+            <button class="primary-button" type="submit">保存到云端</button>
+          </div>
+        </form>
+      </div>
+    </main>
+
+    <div class="toast" data-toast hidden></div>
+    <script id="initial-admin-data" type="application/json" set:html={JSON.stringify(initialData)} is:inline></script>
+    <script id="admin-theme-map" type="application/json" set:html={JSON.stringify(themeMap)} is:inline></script>
+    <script id="admin-config" type="application/json" set:html={JSON.stringify({ customerId, pagesProjectName })} is:inline></script>
+    <script>
+      // @ts-nocheck -- 这是已有的后台客户端脚本；由浏览器回归与生产构建验证。
+      const configNode = document.querySelector("#admin-config");
+      const adminConfig = configNode?.textContent ? JSON.parse(configNode.textContent) : {};
+      const cloudEndpoint = "/api/admin-data";
+      const storagePrefix = `dream-admin-${adminConfig.customerId || "demo"}`;
+      const storageKey = `${storagePrefix}-data`;
+      const loginKey = `${storagePrefix}-login`;
+      const passwordKey = `${storagePrefix}-password`;
+      const initialNode = document.querySelector("#initial-admin-data");
+      const initial = initialNode?.textContent ? JSON.parse(initialNode.textContent) : {};
+      const saved = localStorage.getItem(storageKey);
+      const savedData = saved ? JSON.parse(saved) : null;
+      let state;
+      const defaultStoryItems = Array.isArray(initial.defaultStoryItems) ? initial.defaultStoryItems : [];
+      const defaultQuoteItems = Array.isArray(initial.defaultQuoteItems) ? initial.defaultQuoteItems : [];
+      const defaultAnniversaryItems = Array.isArray(initial.defaultAnniversaryItems) ? initial.defaultAnniversaryItems : [];
+      const defaultGalleryCategories = initial.galleryCategories?.length
+        ? initial.galleryCategories
+        : [
+            { key: "daily", title: "日常", order: 1 },
+            { key: "date", title: "约会", order: 2 },
+            { key: "goods", title: "谷子", order: 3 },
+            { key: "together", title: "合照", order: 4 },
+          ];
+      const defaultGalleryItems = Array.isArray(initial.defaultGalleryItems) ? initial.defaultGalleryItems : [];
+
+      function normalizeGalleryDraft(value) {
+        const source = typeof value === "string"
+          ? { images: value }
+          : value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+        const images = [];
+        const appendCandidate = (item) => {
+          if (typeof item === "string" && item.trim()) {
+            images.push({ image: item.trim() });
+            return;
+          }
+          if (item && typeof item === "object" && !Array.isArray(item) && typeof item.image === "string" && item.image.trim()) {
+            images.push({ ...item, image: item.image.trim() });
+          }
+        };
+        if (Array.isArray(source.images)) source.images.forEach(appendCandidate);
+        else appendCandidate(source.images);
+        if (Array.isArray(source.items)) source.items.forEach(appendCandidate);
+        else appendCandidate(source.items);
+        if (!images.some((item) => item.image === source.image)) appendCandidate(source.image);
+        return { ...source, images };
+      }
+
+      function mergeStateWithDefaults(value) {
+        const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+        const merged = {
+          ...initial,
+          ...source,
+          profile: { layoutPreset: "full", customThemeColor: "", ...(initial.profile || {}), ...(source.profile || {}) },
+          about: { ...(initial.about || {}), ...(source.about || {}) },
+          modules: { ...(initial.modules || {}), ...(source.modules || {}) },
+          galleryCategories: Object.prototype.hasOwnProperty.call(source, "galleryCategories") && Array.isArray(source.galleryCategories)
+            ? source.galleryCategories
+            : initial.galleryCategories,
+          storyDraft: source.storyDraft || initial.storyDraft || { items: [], deletedStoryIds: [] },
+          quotesDraft: source.quotesDraft || initial.quotesDraft || { items: [], deletedQuoteIds: [] },
+          anniversaryDraft: source.anniversaryDraft || initial.anniversaryDraft || { items: [], deletedAnniversaryIds: [] },
+          galleryDraft: normalizeGalleryDraft(source.galleryDraft || initial.galleryDraft),
+        };
+        delete merged.defaultGalleryItems;
+        delete merged.defaultStoryItems;
+        delete merged.defaultQuoteItems;
+        delete merged.defaultAnniversaryItems;
+        return merged;
+      }
+
+      state = mergeStateWithDefaults(savedData);
+      const login = document.querySelector("[data-login]");
+      const admin = document.querySelector("[data-admin]");
+      const toast = document.querySelector("[data-toast]");
+      let storyPendingImages = [];
+      const adminThemeMap = JSON.parse(document.querySelector("#admin-theme-map")?.textContent || "{}");
+      let savedThemeSnapshot = null;
+      let cloudLoadPromise = Promise.resolve(true);
+      let cloudSaveQueue = Promise.resolve();
+
+      function normalizeKey(value) {
+        return String(value || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[char]);
+      }
+
+      function getGalleryCategories() {
+        const source = Array.isArray(state.galleryCategories) ? state.galleryCategories : defaultGalleryCategories;
+        return source
+          .map((category, index) => ({
+            key: normalizeKey(category.key) || `category-${index + 1}`,
+            title: String(category.title || "").trim() || `分类 ${index + 1}`,
+            cover: String(category.cover || ""),
+            coverPosition: ["center", "top", "bottom", "left", "right"].includes(category.coverPosition) ? category.coverPosition : "center",
+            order: Number(category.order ?? index + 1),
+          }))
+          .sort((a, b) => a.order - b.order);
+      }
+
+      function ensureGalleryCategories() {
+        state.galleryCategories = getGalleryCategories();
+        return state.galleryCategories;
+      }
+
+      function buildCategoryOptions(selectedKey = "") {
+        const categories = getGalleryCategories();
+        const options = categories
+          .map((category) => {
+            const selected = category.key === selectedKey ? " selected" : "";
+            return `<option value="${escapeHtml(category.key)}" data-label="${escapeHtml(category.title)}"${selected}>${escapeHtml(category.title)}</option>`;
+          })
+          .join("");
+        const uncategorizedSelected = !selectedKey || !categories.some((category) => category.key === selectedKey) ? " selected" : "";
+        return `<option value="" data-label="未分类"${uncategorizedSelected}>未分类（前台不显示）</option>${options}`;
+      }
+
+      function getPath(path) {
+        return path.split(".").reduce((value, key) => value?.[key], state) ?? "";
+      }
+
+      function setPath(path, value) {
+        const keys = path.split(".");
+        let target = state;
+        for (const key of keys.slice(0, -1)) {
+          target[key] ??= {};
+          target = target[key];
+        }
+        target[keys[keys.length - 1]] = value;
+      }
+
+      function showToast(message) {
+        if (!toast) return;
+        toast.textContent = message;
+        toast.hidden = false;
+        window.setTimeout(() => {
+          toast.hidden = true;
+        }, 2200);
+      }
+
+      function setBatchUploadStatus(message) {
+        const status = document.querySelector("[data-batch-upload-status]");
+        if (status) status.textContent = message;
+      }
+
+      function setBatchUploadBusy(busy) {
+        const form = document.querySelector("[data-admin-form]");
+        if (form) form.setAttribute("aria-busy", String(busy));
+        document.querySelectorAll('[data-batch-input], [data-clear-batch], [data-batch-category], [data-batch-title], [data-batch-caption], [data-admin-form] button[type="submit"], [data-preview-home]').forEach((control) => {
+          control.disabled = busy;
+        });
+      }
+
+      function showAdmin() {
+        login.hidden = true;
+        admin.hidden = false;
+      }
+
+      function applyAdminTheme() {
+        const theme = window.DreamTheme?.resolveTheme(state.profile, adminThemeMap)
+          || adminThemeMap[state.profile?.themeColor]
+          || adminThemeMap.lavender;
+        window.DreamTheme?.applyThemeVars(theme, [document.documentElement]);
+        const preview = document.querySelector("[data-theme-preview]");
+        if (preview) preview.setAttribute("data-custom-active", String(Boolean(state.profile?.customThemeColor)));
+      }
+
+      function rememberSavedTheme() {
+        savedThemeSnapshot = {
+          themeColor: state.profile?.themeColor || "gold",
+          customThemeColor: window.DreamTheme?.normalizeHex(state.profile?.customThemeColor) || "",
+        };
+      }
+
+      function syncThemeControls() {
+        const normalized = window.DreamTheme?.normalizeHex(state.profile?.customThemeColor) || "";
+        const preset = adminThemeMap[state.profile?.themeColor] || adminThemeMap.gold || adminThemeMap.lavender;
+        const picker = document.querySelector("[data-custom-theme-picker]");
+        const hex = document.querySelector("[data-custom-theme-hex]");
+        const error = document.querySelector("[data-custom-theme-error]");
+        if (picker) picker.value = normalized || preset?.accent || "#B98231";
+        if (hex) hex.value = normalized;
+        if (error) error.textContent = "";
+        applyAdminTheme();
+      }
+
+      function getCategoryCoverPreview(category) {
+        if (category.cover) return category.cover;
+        const matchesCategory = (item) =>
+          item.categoryKey === category.key ||
+          (!item.categoryKey && item.category === category.title);
+        const builtInImage = defaultGalleryItems.find(matchesCategory)?.image;
+        const cloudImage = (state.galleryDraft?.images ?? []).find(matchesCategory)?.image;
+        return builtInImage || cloudImage || "/uploads/memory-placeholder.svg";
+      }
+
+      function renderCategoryControls() {
+        ensureGalleryCategories();
+        const manager = document.querySelector("[data-category-manager]");
+        if (manager) {
+          manager.textContent = "";
+          if (state.galleryCategories.length === 0) {
+            const empty = document.createElement("p");
+            empty.className = "hint";
+            empty.textContent = "当前没有相册分类，前台相册模块不会渲染。点击“新增分类”即可恢复。";
+            manager.append(empty);
+          }
+          for (const [index, category] of state.galleryCategories.entries()) {
+            const row = document.createElement("div");
+            const coverEditor = document.createElement("div");
+            const coverPreview = document.createElement("img");
+            const coverInput = document.createElement("input");
+            const fields = document.createElement("div");
+            const input = document.createElement("input");
+            const position = document.createElement("select");
+            const clearCover = document.createElement("button");
+            const orderActions = document.createElement("div");
+            const moveUp = document.createElement("button");
+            const moveDown = document.createElement("button");
+            const remove = document.createElement("button");
+            row.className = "category-row";
+            coverEditor.className = "category-cover-editor";
+            coverPreview.src = getCategoryCoverPreview(category);
+            coverPreview.alt = `${category.title}分类封面预览`;
+            coverPreview.loading = "eager";
+            coverPreview.decoding = "async";
+            coverPreview.style.objectPosition = category.cover ? category.coverPosition : "center";
+            coverPreview.addEventListener("error", () => {
+              if (!coverPreview.src.endsWith("/uploads/memory-placeholder.svg")) {
+                coverPreview.src = "/uploads/memory-placeholder.svg";
+              }
+            });
+            coverPreview.setAttribute("data-category-cover-preview", String(index));
+            coverInput.type = "file";
+            coverInput.accept = "image/*,.heic,.heif";
+            coverInput.setAttribute("data-category-cover-input", String(index));
+            coverEditor.append(coverPreview, coverInput);
+            fields.className = "category-fields";
+            input.type = "text";
+            input.value = category.title;
+            input.placeholder = "分类名称";
+            input.setAttribute("data-category-title", String(index));
+            for (const [value, label] of [["center", "封面居中"], ["top", "封面偏上"], ["bottom", "封面偏下"], ["left", "封面偏左"], ["right", "封面偏右"]]) {
+              const option = document.createElement("option");
+              option.value = value;
+              option.textContent = label;
+              option.selected = category.coverPosition === value;
+              position.append(option);
+            }
+            position.setAttribute("data-category-cover-position", String(index));
+            clearCover.className = "small-danger";
+            clearCover.type = "button";
+            clearCover.textContent = "清除自定义封面";
+            clearCover.setAttribute("data-clear-category-cover", String(index));
+            orderActions.className = "category-order-actions";
+            moveUp.className = "ghost-button";
+            moveUp.type = "button";
+            moveUp.textContent = "上移";
+            moveUp.disabled = index === 0;
+            moveUp.setAttribute("data-move-category", "up");
+            moveUp.setAttribute("data-index", String(index));
+            moveDown.className = "ghost-button";
+            moveDown.type = "button";
+            moveDown.textContent = "下移";
+            moveDown.disabled = index === state.galleryCategories.length - 1;
+            moveDown.setAttribute("data-move-category", "down");
+            moveDown.setAttribute("data-index", String(index));
+            orderActions.append(moveUp, moveDown);
+            fields.append(input, position, clearCover, orderActions);
+            remove.className = "small-danger";
+            remove.type = "button";
+            remove.textContent = "删除";
+            remove.setAttribute("data-remove-category", String(index));
+            row.append(coverEditor, fields, remove);
+            manager.append(row);
+          }
+        }
+
+        renderCategorySelects();
+      }
+
+      function renderCategorySelects() {
+        document.querySelectorAll("[data-batch-category]").forEach((select) => {
+          const current = select.value || getGalleryCategories()[0]?.key || "goods";
+          select.innerHTML = buildCategoryOptions(current);
+        });
+      }
+
+      function getStoryItems() {
+        state.storyDraft ??= { items: [], deletedStoryIds: [] };
+        state.storyDraft.items ??= [];
+        state.storyDraft.deletedStoryIds ??= [];
+        const deletedKeys = new Set(state.storyDraft.deletedStoryIds);
+        const existingKeys = new Set(state.storyDraft.items.map((item) => item.sourceId || item.id));
+        for (const item of defaultStoryItems) {
+          const key = item.sourceId || item.id;
+          if (!deletedKeys.has(key) && !existingKeys.has(key)) {
+            state.storyDraft.items.push({ ...item });
+          }
+        }
+        return state.storyDraft.items;
+      }
+
+      function renderStoryManager() {
+        const manager = document.querySelector("[data-story-manager]");
+        if (!manager) return;
+        manager.textContent = "";
+        const stories = getStoryItems()
+          .map((item, index) => ({ item, index }))
+          .sort((a, b) => String(b.item.date || "").localeCompare(String(a.item.date || "")));
+        if (stories.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "hint";
+          empty.textContent = "还没有从后台新增故事。";
+          manager.append(empty);
+          return;
+        }
+
+        for (const entry of stories) {
+          const { item, index } = entry;
+          const card = document.createElement("details");
+          const summary = document.createElement("summary");
+          const row = document.createElement("div");
+          const date = document.createElement("input");
+          const title = document.createElement("input");
+          const intro = document.createElement("textarea");
+          const body = document.createElement("textarea");
+          const addImages = document.createElement("input");
+          const remove = document.createElement("button");
+          card.className = "story-edit-card";
+          summary.textContent = `${item.date || "未定日期"} · ${item.title || "未命名故事"}`;
+          row.className = "story-row is-edit";
+          date.type = "date";
+          date.value = item.date || "";
+          date.setAttribute("data-story-edit", "date");
+          date.setAttribute("data-index", String(index));
+          title.type = "text";
+          title.value = item.title || "";
+          title.placeholder = "故事标题";
+          title.setAttribute("data-story-edit", "title");
+          title.setAttribute("data-index", String(index));
+          intro.value = item.summary || "";
+          intro.placeholder = "故事简介";
+          intro.setAttribute("data-story-edit", "summary");
+          intro.setAttribute("data-index", String(index));
+          body.value = item.body || "";
+          body.placeholder = "故事正文";
+          body.setAttribute("data-story-edit", "body");
+          body.setAttribute("data-index", String(index));
+          addImages.type = "file";
+          addImages.accept = "image/*,.heic,.heif";
+          addImages.multiple = true;
+          addImages.setAttribute("data-story-image-add", String(index));
+          remove.type = "button";
+          remove.textContent = "删除";
+          remove.setAttribute("data-remove-story", String(index));
+          row.append(date, title, intro, body, addImages);
+          if (Array.isArray(item.images) && item.images.length > 0) {
+            const images = document.createElement("div");
+            images.className = "story-row-images";
+            for (const [imageIndex, src] of item.images.entries()) {
+              const wrap = document.createElement("div");
+              const image = document.createElement("img");
+              const imageRemove = document.createElement("button");
+              wrap.className = "story-row-image";
+              image.src = src;
+              image.alt = item.title || "故事配图";
+              imageRemove.type = "button";
+              imageRemove.textContent = "删图";
+              imageRemove.setAttribute("data-remove-story-image", `${index}:${imageIndex}`);
+              wrap.append(image, imageRemove);
+              images.append(wrap);
+            }
+            row.append(images);
+          }
+          row.append(remove);
+          card.append(summary, row);
+          manager.append(card);
+        }
+      }
+
+      function renderStoryImagePreview() {
+        const preview = document.querySelector("[data-story-image-preview]");
+        if (!preview) return;
+        preview.textContent = "";
+        for (const src of storyPendingImages) {
+          const image = document.createElement("img");
+          image.src = src;
+          image.alt = "待添加故事配图";
+          preview.append(image);
+        }
+      }
+
+      function getQuoteItems() {
+        state.quotesDraft ??= { items: [], deletedQuoteIds: [] };
+        state.quotesDraft.items ??= [];
+        state.quotesDraft.deletedQuoteIds ??= [];
+        const deletedKeys = new Set(state.quotesDraft.deletedQuoteIds);
+        const existingKeys = new Set(state.quotesDraft.items.map((item) => item.sourceId || item.id));
+        for (const item of defaultQuoteItems) {
+          const key = item.sourceId || item.id;
+          if (!deletedKeys.has(key) && !existingKeys.has(key)) {
+            state.quotesDraft.items.push({ ...item });
+          }
+        }
+        return state.quotesDraft.items;
+      }
+
+      function renderQuoteManager() {
+        const manager = document.querySelector("[data-quote-manager]");
+        if (!manager) return;
+        manager.textContent = "";
+        const quotes = getQuoteItems();
+        if (quotes.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "hint";
+          empty.textContent = "还没有添加语录。";
+          manager.append(empty);
+          return;
+        }
+
+        for (const [index, item] of quotes.entries()) {
+          const card = document.createElement("div");
+          const row = document.createElement("div");
+          const content = document.createElement("textarea");
+          const mood = document.createElement("input");
+          const remove = document.createElement("button");
+          card.className = "quote-edit-card";
+          row.className = "quote-row";
+          content.value = item.content || "";
+          content.placeholder = "语录内容";
+          content.setAttribute("data-quote-edit", "content");
+          content.setAttribute("data-index", String(index));
+          mood.type = "text";
+          mood.value = item.mood || "";
+          mood.placeholder = "标签/心情";
+          mood.setAttribute("data-quote-edit", "mood");
+          mood.setAttribute("data-index", String(index));
+          remove.className = "small-danger";
+          remove.type = "button";
+          remove.textContent = "删除这句";
+          remove.setAttribute("data-remove-quote", String(index));
+          row.append(content, mood, remove);
+          card.append(row);
+          manager.append(card);
+        }
+      }
+
+      function getAnniversaryItems() {
+        state.anniversaryDraft ??= { items: [], deletedAnniversaryIds: [] };
+        state.anniversaryDraft.items ??= [];
+        state.anniversaryDraft.deletedAnniversaryIds ??= [];
+        const deletedKeys = new Set(state.anniversaryDraft.deletedAnniversaryIds);
+        const existingKeys = new Set(state.anniversaryDraft.items.map((item) => item.sourceId || item.id));
+        for (const item of defaultAnniversaryItems) {
+          const key = item.sourceId || item.id;
+          if (!deletedKeys.has(key) && !existingKeys.has(key)) {
+            state.anniversaryDraft.items.push({ ...item });
+          }
+        }
+        return state.anniversaryDraft.items;
+      }
+
+      function renderAnniversaryManager() {
+        const manager = document.querySelector("[data-anniversary-manager]");
+        if (!manager) return;
+        manager.textContent = "";
+        const anniversaries = getAnniversaryItems()
+          .map((item, index) => ({ item, index }))
+          .sort((a, b) => String(a.item.date || "").localeCompare(String(b.item.date || "")));
+        if (anniversaries.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "hint";
+          empty.textContent = "还没有添加纪念日。";
+          manager.append(empty);
+          return;
+        }
+
+        for (const { item, index } of anniversaries) {
+          const card = document.createElement("div");
+          const row = document.createElement("div");
+          const title = document.createElement("input");
+          const date = document.createElement("input");
+          const showWrap = document.createElement("label");
+          const show = document.createElement("input");
+          const calendarText = document.createElement("input");
+          const note = document.createElement("textarea");
+          const remove = document.createElement("button");
+          card.className = "anniversary-edit-card";
+          row.className = "anniversary-row";
+          title.type = "text";
+          title.value = item.title || item.name || "";
+          title.placeholder = "纪念日名称";
+          title.setAttribute("data-anniversary-edit", "title");
+          title.setAttribute("data-index", String(index));
+          date.type = "date";
+          date.value = item.date || "";
+          date.setAttribute("data-anniversary-edit", "date");
+          date.setAttribute("data-index", String(index));
+          showWrap.className = "switch-row";
+          showWrap.append(document.createTextNode("在日历标记"));
+          show.type = "checkbox";
+          show.checked = item.showOnCalendar !== false;
+          show.setAttribute("data-anniversary-edit", "showOnCalendar");
+          show.setAttribute("data-index", String(index));
+          showWrap.append(show);
+          calendarText.type = "text";
+          calendarText.value = item.calendarText || "";
+          calendarText.placeholder = "日历短标记";
+          calendarText.setAttribute("data-anniversary-edit", "calendarText");
+          calendarText.setAttribute("data-index", String(index));
+          note.value = item.note || "";
+          note.placeholder = "备注";
+          note.setAttribute("data-anniversary-edit", "note");
+          note.setAttribute("data-index", String(index));
+          remove.className = "small-danger";
+          remove.type = "button";
+          remove.textContent = "删除这个纪念日";
+          remove.setAttribute("data-remove-anniversary", String(index));
+          row.append(title, date, showWrap, calendarText, note, remove);
+          card.append(row);
+          manager.append(card);
+        }
+      }
+
+      function hydrateForm() {
+        document.querySelectorAll("[name]").forEach((field) => {
+          if (field.type === "checkbox") {
+            field.checked = Boolean(getPath(field.name));
+          } else {
+            field.value = getPath(field.name);
+          }
+        });
+
+        document.querySelectorAll("[data-preview]").forEach((image) => {
+          const path = image.getAttribute("data-preview");
+          image.src = getPath(path);
+        });
+
+        renderBatchPreview();
+        renderCoverPreview();
+        renderCategoryControls();
+        renderStoryManager();
+        renderStoryImagePreview();
+        renderQuoteManager();
+        renderAnniversaryManager();
+        syncThemeControls();
+      }
+
+      async function loadCloudData(password) {
+        try {
+          const response = await fetch(cloudEndpoint, {
+            headers: { "x-admin-password": password },
+          });
+          if (!response.ok) return false;
+          const result = await response.json();
+          if (result.ok && result.data) {
+            state = mergeStateWithDefaults(result.data);
+            localStorage.setItem(storageKey, JSON.stringify(state));
+            hydrateForm();
+            showToast("已读取云端保存内容");
+          }
+          if (result.ok) rememberSavedTheme();
+          return Boolean(result.ok);
+        } catch {
+          showToast("暂时没有读取到已保存内容，请稍后重试");
+          return false;
+        }
+      }
+
+      function saveCloudData() {
+        const snapshot = JSON.stringify(state);
+        const save = async () => {
+          const password = sessionStorage.getItem(passwordKey) || "";
+          const response = await fetch(cloudEndpoint, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-admin-password": password,
+            },
+            body: snapshot,
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message || "保存失败");
+          }
+          rememberSavedTheme();
+        };
+        cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(save);
+        return cloudSaveQueue;
+      }
+
+      async function uploadImage(imageData, fileName) {
+        const password = sessionStorage.getItem(passwordKey) || "";
+        const response = await fetch("/api/admin-image", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-admin-password": password,
+          },
+          body: JSON.stringify({ imageData, fileName }),
+        });
+        const responseText = await response.text();
+        let result = null;
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          throw new Error(response.ok ? "服务器返回了无法识别的上传结果，请重试" : `上传请求失败（HTTP ${response.status}）`);
+        }
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || `图片上传失败（HTTP ${response.status}）`);
+        }
+        return result.image;
+      }
+
+      function getUploadErrorMessage(error, fallback = "图片处理失败，请重新选择后再试") {
+        return error instanceof Error && error.message ? error.message : fallback;
+      }
+
+      async function isHeicFile(file) {
+        const type = String(file.type || "").toLowerCase();
+        const name = String(file.name || "").toLowerCase();
+        if (["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"].includes(type)) return true;
+        if (/\.(heic|heif)$/.test(name)) return true;
+        try {
+          const header = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+          const signature = String.fromCharCode(...header);
+          return /ftyp(?:heic|heix|hevc|hevx|heim|heis|mif1|msf1)/.test(signature);
+        } catch {
+          return false;
+        }
+      }
+
+      async function normalizeImageFile(file) {
+        if (!(await isHeicFile(file))) return file;
+        showToast("正在转换手机 HEIC/HEIF 图片，请稍候...");
+        try {
+          const { heicTo, isHeic } = await import("heic-to/csp");
+          if (!(await isHeic(file))) throw new Error("文件内容不是有效的 HEIC/HEIF 图片");
+          return await heicTo({ blob: file, type: "image/jpeg", quality: 0.9 });
+        } catch (error) {
+          throw new Error(`HEIC/HEIF 转换失败：${getUploadErrorMessage(error, "图片内容可能已损坏")}`);
+        }
+      }
+
+      function readBlobAsDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.addEventListener("error", () => reject(new Error("无法读取处理后的图片数据")));
+          reader.addEventListener("load", () => resolve(reader.result));
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      const directUploadImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+      const maxUploadImageBytes = 6 * 1024 * 1024;
+      const targetCompressedImageBytes = Math.floor(5.75 * 1024 * 1024);
+
+      async function compressImage(file, maxSize = 1200, quality = 0.82, preserveOriginal = false) {
+        const source = await normalizeImageFile(file);
+        if (preserveOriginal && directUploadImageTypes.has(String(source.type || "").toLowerCase()) && source.size <= maxUploadImageBytes) {
+          return await readBlobAsDataUrl(source);
+        }
+        const objectUrl = URL.createObjectURL(source);
+        try {
+          const image = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.addEventListener("error", () => reject(new Error("浏览器无法识别这张图片，文件可能已损坏或格式不受支持")));
+            img.addEventListener("load", () => resolve(img));
+            img.src = objectUrl;
+          });
+
+          if (!image.naturalWidth || !image.naturalHeight) throw new Error("图片尺寸无效，无法上传");
+          const maxPixelRatio = Math.sqrt((16 * 1024 * 1024) / (image.naturalWidth * image.naturalHeight));
+          const ratio = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight), maxPixelRatio);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+          canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+          const drawSource = () => {
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("当前浏览器无法处理图片，请更新浏览器后重试");
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = "high";
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          };
+          const encodeJpeg = (outputQuality) => new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("图片压缩失败，请重新选择后再试")), "image/jpeg", outputQuality);
+          });
+          drawSource();
+          let outputQuality = quality;
+          let output = await encodeJpeg(outputQuality);
+          if (preserveOriginal) {
+            while (output.size > targetCompressedImageBytes && outputQuality > 0.7) {
+              outputQuality = Math.max(0.7, outputQuality - 0.07);
+              output = await encodeJpeg(outputQuality);
+            }
+            for (let attempt = 0; output.size > targetCompressedImageBytes && attempt < 4; attempt += 1) {
+              const scale = Math.min(0.9, Math.sqrt(targetCompressedImageBytes / output.size) * 0.92);
+              canvas.width = Math.max(1, Math.round(canvas.width * scale));
+              canvas.height = Math.max(1, Math.round(canvas.height * scale));
+              drawSource();
+              output = await encodeJpeg(Math.max(0.72, outputQuality));
+            }
+            if (output.size > maxUploadImageBytes) throw new Error("图片处理后仍超过 6MB，请裁剪后重新上传");
+          }
+          return await readBlobAsDataUrl(output);
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      }
+
+      async function uploadSelectedFiles(files, options) {
+        const selected = Number.isFinite(options.limit) ? files.slice(0, options.limit) : files;
+        const failures = [];
+        const uploaded = [];
+        let successCount = 0;
+        for (const [index, file] of selected.entries()) {
+          const progressText = `正在处理第 ${index + 1}/${selected.length} 张：${file.name || "未命名图片"}`;
+          showToast(progressText);
+          options.onProgress?.(progressText, index + 1, selected.length);
+          try {
+            const imageData = await compressImage(file, options.maxSize, options.quality, options.preserveOriginal === true);
+            const imageUrl = await uploadImage(imageData, file.name || `image-${index + 1}.jpg`);
+            await options.onUploaded(imageUrl, file);
+            uploaded.push({ imageUrl, file });
+            successCount += 1;
+          } catch (error) {
+            failures.push({ fileName: file.name || `第 ${index + 1} 张`, message: getUploadErrorMessage(error) });
+          }
+        }
+        return { successCount, failures, selectedCount: selected.length, uploaded };
+      }
+
+      function getUploadSummary(successText, result) {
+        if (result.failures.length === 0) return successText;
+        const first = result.failures[0];
+        const remaining = result.failures.length > 1 ? `；另有 ${result.failures.length - 1} 张失败` : "";
+        return `${result.successCount} 张成功，${result.failures.length} 张失败：${first.fileName}（${first.message}）${remaining}。失败图片可重新选择上传。`;
+      }
+
+      function renderBatchPreview() {
+        const preview = document.querySelector("[data-batch-preview]");
+        if (!preview) return;
+        preview.textContent = "";
+        const cloudImages = normalizeGalleryDraft(state.galleryDraft).images;
+        const summary = document.querySelector("[data-gallery-count-summary]");
+        if (summary) summary.textContent = `共 ${defaultGalleryItems.length + cloudImages.length} 张｜内置 ${defaultGalleryItems.length} 张｜云端 ${cloudImages.length} 张`;
+
+        function appendCard(item, source, index = -1) {
+          const figure = document.createElement("figure");
+          const image = document.createElement("img");
+          const caption = document.createElement("figcaption");
+          const meta = document.createElement("div");
+          const categoryBadge = document.createElement("span");
+          const sourceBadge = document.createElement("span");
+          figure.setAttribute("data-gallery-source", source);
+          if (source === "cms") figure.classList.add("is-readonly");
+          image.loading = "eager";
+          image.decoding = "async";
+          image.src = item.image;
+          image.alt = item.title || item.category || "图片";
+          caption.textContent = item.title || item.category || "未命名图片";
+          meta.className = "batch-preview-meta";
+          categoryBadge.className = "batch-category-badge";
+          categoryBadge.textContent = item.category || getGalleryCategories().find((category) => category.key === item.categoryKey)?.title || "未分类";
+          sourceBadge.className = `batch-source-badge is-${source}`;
+          sourceBadge.textContent = source === "cms" ? "内置" : "云端";
+          meta.append(categoryBadge, sourceBadge);
+          figure.append(image, meta, caption);
+
+          if (source === "cms") {
+            preview.append(figure);
+            return;
+          }
+
+          const controls = document.createElement("div");
+          const category = document.createElement("select");
+          const title = document.createElement("input");
+          const description = document.createElement("input");
+          const orderActions = document.createElement("div");
+          const moveUp = document.createElement("button");
+          const moveDown = document.createElement("button");
+          const remove = document.createElement("button");
+          controls.className = "batch-preview-controls";
+          category.setAttribute("data-gallery-edit", "category");
+          category.setAttribute("data-index", String(index));
+          category.innerHTML = buildCategoryOptions(item.categoryKey || categoryLabelToKey(item.category));
+          category.value = item.categoryKey || categoryLabelToKey(item.category);
+          title.type = "text";
+          title.placeholder = "标题可不填";
+          title.value = item.title || "";
+          title.setAttribute("data-gallery-edit", "title");
+          title.setAttribute("data-index", String(index));
+          description.type = "text";
+          description.placeholder = "图片说明（可选）";
+          description.value = item.caption || "";
+          description.setAttribute("data-gallery-edit", "caption");
+          description.setAttribute("data-index", String(index));
+          remove.className = "small-danger";
+          remove.type = "button";
+          remove.textContent = "删除";
+          remove.setAttribute("data-remove-gallery-image", String(index));
+          orderActions.className = "category-order-actions";
+          moveUp.className = "ghost-button";
+          moveUp.type = "button";
+          moveUp.textContent = "上移";
+          moveUp.disabled = index === 0;
+          moveUp.setAttribute("data-move-gallery-image", "up");
+          moveUp.setAttribute("data-index", String(index));
+          moveDown.className = "ghost-button";
+          moveDown.type = "button";
+          moveDown.textContent = "下移";
+          moveDown.disabled = index === cloudImages.length - 1;
+          moveDown.setAttribute("data-move-gallery-image", "down");
+          moveDown.setAttribute("data-index", String(index));
+          orderActions.append(moveUp, moveDown);
+          controls.append(category, title, description, orderActions, remove);
+          figure.append(controls);
+          preview.append(figure);
+        }
+
+        defaultGalleryItems.forEach((item) => appendCard(item, "cms"));
+        cloudImages.forEach((item, index) => appendCard(item, "cloud", index));
+      }
+
+      function categoryLabelToKey(label) {
+        const matched = getGalleryCategories().find((category) => category.title === label || category.key === label);
+        return matched?.key || "";
+      }
+
+      function renderCoverPreview() {
+        const preview = document.querySelector("[data-cover-preview]");
+        if (!preview) return;
+        preview.textContent = "";
+        const covers = state.profile?.covers ?? [];
+        for (const [index, cover] of covers.entries()) {
+          const figure = document.createElement("figure");
+          const image = document.createElement("img");
+          const caption = document.createElement("figcaption");
+          image.src = cover;
+          image.alt = `轮播背景 ${index + 1}`;
+          caption.textContent = `轮播背景 ${index + 1}`;
+          figure.append(image, caption);
+          preview.append(figure);
+        }
+      }
+
+      if (sessionStorage.getItem(loginKey) === "true") {
+        cloudLoadPromise = loadCloudData(sessionStorage.getItem(passwordKey) || "").then((authenticated) => {
+          if (authenticated) showAdmin();
+          else {
+            sessionStorage.removeItem(loginKey);
+            sessionStorage.removeItem(passwordKey);
+          }
+          return authenticated;
+        });
+      }
+
+      document.querySelector("[data-login-form]")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const password = new FormData(form).get("password");
+        const authenticated = await loadCloudData(password);
+        if (!authenticated) {
+          showToast("密码不对，请检查发给你的后台密码");
+          return;
+        }
+        sessionStorage.setItem(loginKey, "true");
+        sessionStorage.setItem(passwordKey, password);
+        showAdmin();
+      });
+
+      document.querySelector("[data-logout]")?.addEventListener("click", () => {
+        sessionStorage.removeItem(loginKey);
+        location.reload();
+      });
+
+      document.querySelectorAll("[name]").forEach((field) => {
+        field.addEventListener("input", () => {
+          const value = field.type === "checkbox" ? field.checked : field.value;
+          setPath(field.name, value);
+          if (field.type === "checkbox") {
+            document.querySelectorAll(`[name="${field.name}"]`).forEach((item) => {
+              if (item !== field && item.type === "checkbox") item.checked = field.checked;
+            });
+          }
+          if (field.name === "profile.themeColor") {
+            state.profile.customThemeColor = "";
+            syncThemeControls();
+          }
+        });
+        field.addEventListener("change", () => {
+          const value = field.type === "checkbox" ? field.checked : field.value;
+          setPath(field.name, value);
+          if (field.type === "checkbox") {
+            document.querySelectorAll(`[name="${field.name}"]`).forEach((item) => {
+              if (item !== field && item.type === "checkbox") item.checked = field.checked;
+            });
+          }
+          if (field.name === "profile.themeColor") {
+            state.profile.customThemeColor = "";
+            syncThemeControls();
+          }
+        });
+      });
+      hydrateForm();
+      rememberSavedTheme();
+
+      document.querySelector("[data-custom-theme-picker]")?.addEventListener("input", (event) => {
+        const normalized = window.DreamTheme?.normalizeHex(event.currentTarget.value) || "";
+        if (!normalized) return;
+        state.profile.customThemeColor = normalized;
+        const hex = document.querySelector("[data-custom-theme-hex]");
+        const error = document.querySelector("[data-custom-theme-error]");
+        if (hex) hex.value = normalized;
+        if (error) error.textContent = "";
+        applyAdminTheme();
+      });
+
+      const customHexInput = document.querySelector("[data-custom-theme-hex]");
+      customHexInput?.addEventListener("input", (event) => {
+        const normalized = window.DreamTheme?.normalizeHex(event.currentTarget.value) || "";
+        const error = document.querySelector("[data-custom-theme-error]");
+        if (!normalized) {
+          if (error) error.textContent = "请输入 6 位 Hex，例如 #9AFF9A。";
+          return;
+        }
+        state.profile.customThemeColor = normalized;
+        const picker = document.querySelector("[data-custom-theme-picker]");
+        if (picker) picker.value = normalized;
+        if (error) error.textContent = "";
+        applyAdminTheme();
+      });
+      customHexInput?.addEventListener("change", (event) => {
+        const normalized = window.DreamTheme?.normalizeHex(event.currentTarget.value) || "";
+        if (!normalized) {
+          syncThemeControls();
+          showToast("Hex 格式不正确，已恢复当前主题色");
+          return;
+        }
+        event.currentTarget.value = normalized;
+      });
+
+      document.querySelector("[data-restore-preset-theme]")?.addEventListener("click", () => {
+        state.profile.customThemeColor = "";
+        syncThemeControls();
+        showToast("已恢复当前预设主题，保存后同步前台");
+      });
+
+      document.querySelector("[data-cancel-theme-change]")?.addEventListener("click", () => {
+        if (!savedThemeSnapshot) return;
+        state.profile.themeColor = savedThemeSnapshot.themeColor;
+        state.profile.customThemeColor = savedThemeSnapshot.customThemeColor;
+        const preset = document.querySelector('[name="profile.themeColor"]');
+        if (preset) preset.value = savedThemeSnapshot.themeColor;
+        syncThemeControls();
+        showToast("已取消未保存的主题修改");
+      });
+
+      document.querySelector("[data-add-category]")?.addEventListener("click", () => {
+        const categories = ensureGalleryCategories();
+        const nextNumber = categories.length + 1;
+        categories.push({
+          key: `custom-${Date.now().toString(36)}`,
+          title: `新分类 ${nextNumber}`,
+          cover: "",
+          coverPosition: "center",
+          order: nextNumber,
+        });
+        renderCategoryControls();
+        renderBatchPreview();
+        showToast("已新增分类，记得保存");
+      });
+
+      document.querySelector("[data-category-manager]")?.addEventListener("input", (event) => {
+        const target = event.target;
+        const indexValue = target?.getAttribute?.("data-category-title");
+        if (indexValue == null) return;
+        const index = Number(indexValue);
+        const categories = ensureGalleryCategories();
+        if (!categories[index]) return;
+        categories[index].title = target.value.trim() || `分类 ${index + 1}`;
+        state.galleryDraft?.images?.forEach((item) => {
+          if (item.categoryKey === categories[index].key) item.category = categories[index].title;
+        });
+        renderCategorySelects();
+        renderBatchPreview();
+      });
+
+      document.querySelector("[data-category-manager]")?.addEventListener("change", async (event) => {
+        const target = event.target;
+        const positionIndex = target?.getAttribute?.("data-category-cover-position");
+        if (positionIndex != null) {
+          const category = ensureGalleryCategories()[Number(positionIndex)];
+          if (category) {
+            category.coverPosition = target.value;
+            const preview = document.querySelector(`[data-category-cover-preview="${positionIndex}"]`);
+            if (preview) preview.style.objectPosition = target.value;
+          }
+          return;
+        }
+        const coverIndex = target?.getAttribute?.("data-category-cover-input");
+        if (coverIndex == null) return;
+        const category = ensureGalleryCategories()[Number(coverIndex)];
+        const file = target.files?.[0];
+        const preview = document.querySelector(`[data-category-cover-preview="${coverIndex}"]`);
+        if (!category || !file || !preview) return;
+        const previousSrc = preview.getAttribute("src") || "/uploads/memory-placeholder.svg";
+        const instantPreviewUrl = URL.createObjectURL(file);
+        preview.src = instantPreviewUrl;
+        target.disabled = true;
+        showToast("分类封面已预览，正在上传并保存...");
+        try {
+          const imageData = await compressImage(file, 1200, 0.82);
+          const imageUrl = await uploadImage(imageData, file.name);
+          category.cover = imageUrl;
+          preview.src = imageUrl;
+          localStorage.setItem(storageKey, JSON.stringify(state));
+          await saveCloudData();
+          showToast("分类封面已上传并保存到云端");
+        } catch (error) {
+          preview.src = previousSrc;
+          showToast(error.message || "分类封面上传失败，请重试");
+        } finally {
+          URL.revokeObjectURL(instantPreviewUrl);
+          target.disabled = false;
+          target.value = "";
+        }
+      });
+
+      document.querySelector("[data-category-manager]")?.addEventListener("click", (event) => {
+        const target = event.target;
+        const moveDirection = target?.getAttribute?.("data-move-category");
+        if (moveDirection) {
+          const categories = ensureGalleryCategories();
+          const index = Number(target.getAttribute("data-index"));
+          const nextIndex = moveDirection === "up" ? index - 1 : index + 1;
+          if (!categories[index] || !categories[nextIndex]) return;
+          [categories[index], categories[nextIndex]] = [categories[nextIndex], categories[index]];
+          categories.forEach((category, orderIndex) => {
+            category.order = orderIndex + 1;
+          });
+          renderCategoryControls();
+          renderBatchPreview();
+          showToast("分类顺序已调整，记得保存");
+          return;
+        }
+        const clearIndex = target?.getAttribute?.("data-clear-category-cover");
+        if (clearIndex != null) {
+          const category = ensureGalleryCategories()[Number(clearIndex)];
+          if (!category) return;
+          category.cover = "";
+          const preview = document.querySelector(`[data-category-cover-preview="${clearIndex}"]`);
+          if (preview) {
+            preview.src = getCategoryCoverPreview(category);
+            preview.style.objectPosition = "center";
+          }
+          showToast("已清除自定义封面，保存后会自动使用分类第一张照片");
+          return;
+        }
+        const indexValue = target?.getAttribute?.("data-remove-category");
+        if (indexValue == null) return;
+        const categories = ensureGalleryCategories();
+        const index = Number(indexValue);
+        const category = categories[index];
+        if (!category) return;
+        const categoryImages = (state.galleryDraft?.images || []).filter((item) => item.categoryKey === category.key);
+        if (categoryImages.length > 0) {
+          const firstConfirmed = window.confirm(`分类“${category.title}”中有 ${categoryImages.length} 张图片。删除分类不会删除图片，图片会保留并标记为“未分类”。是否继续？`);
+          if (!firstConfirmed) return;
+          const secondConfirmed = window.confirm("请再次确认：分类将删除；图片文件和图片记录都会保留，但在重新分配分类前不会显示在前台相册中。");
+          if (!secondConfirmed) return;
+          for (const item of categoryImages) {
+            item.categoryKey = "";
+            item.category = "未分类";
+          }
+        } else if (!window.confirm(`确定删除空分类“${category.title}”吗？`)) {
+          return;
+        }
+        categories.splice(index, 1);
+        categories.forEach((category, index) => {
+          category.order = index + 1;
+        });
+        renderCategoryControls();
+        renderBatchPreview();
+        showToast(categoryImages.length > 0 ? "已删除分类，图片已保留为未分类" : "已删除空分类");
+      });
+
+      document.querySelector("[data-add-story]")?.addEventListener("click", async () => {
+        const dateInput = document.querySelector("[data-story-date]");
+        const titleInput = document.querySelector("[data-story-title]");
+        const summaryInput = document.querySelector("[data-story-summary]");
+        const bodyInput = document.querySelector("[data-story-body]");
+        const title = titleInput?.value?.trim();
+        if (!title) {
+          showToast("先填一个故事标题");
+          return;
+        }
+        const todayText = new Date().toISOString().slice(0, 10);
+        getStoryItems().push({
+          id: `story-${Date.now().toString(36)}`,
+          date: dateInput?.value || todayText,
+          title,
+          summary: summaryInput?.value?.trim() || "",
+          body: bodyInput?.value?.trim() || "",
+          images: [...storyPendingImages],
+          createdAt: new Date().toISOString(),
+        });
+        if (titleInput) titleInput.value = "";
+        if (summaryInput) summaryInput.value = "";
+        if (bodyInput) bodyInput.value = "";
+        storyPendingImages = [];
+        renderStoryImagePreview();
+        renderStoryManager();
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        try {
+          await saveCloudData();
+          showToast("故事已添加并保存到云端");
+        } catch (error) {
+          showToast(error.message || "故事已加入列表，但云端保存失败，请点击保存重试");
+        }
+      });
+
+      document.querySelector("[data-story-images]")?.addEventListener("change", async (event) => {
+        const input = event.currentTarget;
+        const files = Array.from(input.files ?? []);
+        if (files.length === 0) return;
+        input.disabled = true;
+        try {
+          const result = await uploadSelectedFiles(files, {
+            limit: 12,
+            maxSize: 6000,
+            quality: 0.9,
+            preserveOriginal: true,
+            onUploaded(imageUrl) {
+              storyPendingImages.push(imageUrl);
+              renderStoryImagePreview();
+            },
+          });
+          showToast(getUploadSummary("故事配图已上传，记得添加故事并保存", result));
+        } finally {
+          input.disabled = false;
+          input.value = "";
+        }
+      });
+
+      document.querySelector("[data-story-manager]")?.addEventListener("input", (event) => {
+        const target = event.target;
+        const field = target?.getAttribute?.("data-story-edit");
+        const index = Number(target?.getAttribute?.("data-index"));
+        const item = getStoryItems()[index];
+        if (!field || !item) return;
+        item[field] = target.value;
+      });
+
+      document.querySelector("[data-story-manager]")?.addEventListener("change", async (event) => {
+        const target = event.target;
+        const indexValue = target?.getAttribute?.("data-story-image-add");
+        if (indexValue == null) return;
+        const item = getStoryItems()[Number(indexValue)];
+        const files = Array.from(target.files ?? []);
+        if (!item || files.length === 0) return;
+        item.images ??= [];
+        target.disabled = true;
+        try {
+          const result = await uploadSelectedFiles(files, {
+            limit: 12,
+            maxSize: 6000,
+            quality: 0.9,
+            preserveOriginal: true,
+            onUploaded(imageUrl) {
+              item.images.push(imageUrl);
+            },
+          });
+          renderStoryManager();
+          showToast(getUploadSummary("故事配图已加上，记得保存到云端", result));
+        } finally {
+          target.disabled = false;
+          target.value = "";
+        }
+      });
+
+      document.querySelector("[data-story-manager]")?.addEventListener("click", (event) => {
+        const target = event.target;
+        const imageValue = target?.getAttribute?.("data-remove-story-image");
+        if (imageValue != null) {
+          const [storyIndex, imageIndex] = imageValue.split(":").map(Number);
+          const item = getStoryItems()[storyIndex];
+          if (!item?.images?.[imageIndex]) return;
+          item.images.splice(imageIndex, 1);
+          renderStoryManager();
+          showToast("已删除这张配图，记得保存");
+          return;
+        }
+        const indexValue = target?.getAttribute?.("data-remove-story");
+        if (indexValue == null) return;
+        const stories = getStoryItems();
+        const item = stories[Number(indexValue)];
+        const key = item?.sourceId || item?.id;
+        if (key) {
+          state.storyDraft ??= { items: [], deletedStoryIds: [] };
+          state.storyDraft.deletedStoryIds ??= [];
+          if (item?.sourceId && !state.storyDraft.deletedStoryIds.includes(key)) {
+            state.storyDraft.deletedStoryIds.push(key);
+          }
+        }
+        stories.splice(Number(indexValue), 1);
+        renderStoryManager();
+        showToast("已删除这条故事，记得保存");
+      });
+
+      document.querySelector("[data-add-quote]")?.addEventListener("click", () => {
+        const contentInput = document.querySelector("[data-quote-content]");
+        const moodInput = document.querySelector("[data-quote-mood]");
+        const content = contentInput?.value?.trim();
+        if (!content) {
+          showToast("先写一句想说的话");
+          return;
+        }
+        getQuoteItems().push({
+          id: `quote-${Date.now().toString(36)}`,
+          content,
+          mood: moodInput?.value?.trim() || "",
+          createdAt: new Date().toISOString(),
+        });
+        if (contentInput) contentInput.value = "";
+        if (moodInput) moodInput.value = "";
+        renderQuoteManager();
+        showToast("已添加语录，记得保存到云端");
+      });
+
+      document.querySelector("[data-quote-manager]")?.addEventListener("input", (event) => {
+        const target = event.target;
+        const field = target?.getAttribute?.("data-quote-edit");
+        const index = Number(target?.getAttribute?.("data-index"));
+        const item = getQuoteItems()[index];
+        if (!field || !item) return;
+        item[field] = target.value;
+      });
+
+      document.querySelector("[data-quote-manager]")?.addEventListener("click", (event) => {
+        const target = event.target;
+        const indexValue = target?.getAttribute?.("data-remove-quote");
+        if (indexValue == null) return;
+        const quotes = getQuoteItems();
+        const item = quotes[Number(indexValue)];
+        const key = item?.sourceId || item?.id;
+        if (key && item?.sourceId && !state.quotesDraft.deletedQuoteIds.includes(key)) {
+          state.quotesDraft.deletedQuoteIds.push(key);
+        }
+        quotes.splice(Number(indexValue), 1);
+        renderQuoteManager();
+        showToast("已删除这句语录，记得保存");
+      });
+
+      document.querySelector("[data-add-anniversary]")?.addEventListener("click", () => {
+        const titleInput = document.querySelector("[data-anniversary-title]");
+        const dateInput = document.querySelector("[data-anniversary-date]");
+        const showInput = document.querySelector("[data-anniversary-show-calendar]");
+        const calendarTextInput = document.querySelector("[data-anniversary-calendar-text]");
+        const noteInput = document.querySelector("[data-anniversary-note]");
+        const title = titleInput?.value?.trim();
+        if (!title) {
+          showToast("先填纪念日名称");
+          return;
+        }
+        if (!dateInput?.value) {
+          showToast("先选择纪念日日期");
+          return;
+        }
+        getAnniversaryItems().push({
+          id: `anniversary-${Date.now().toString(36)}`,
+          title,
+          date: dateInput.value,
+          kind: "since",
+          showOnCalendar: showInput?.checked !== false,
+          calendarText: calendarTextInput?.value?.trim() || "",
+          note: noteInput?.value?.trim() || "",
+          calendarColor: "gold",
+          createdAt: new Date().toISOString(),
+        });
+        if (titleInput) titleInput.value = "";
+        if (dateInput) dateInput.value = "";
+        if (showInput) showInput.checked = true;
+        if (calendarTextInput) calendarTextInput.value = "";
+        if (noteInput) noteInput.value = "";
+        renderAnniversaryManager();
+        showToast("已添加纪念日，记得保存到云端");
+      });
+
+      document.querySelector("[data-anniversary-manager]")?.addEventListener("input", (event) => {
+        const target = event.target;
+        const field = target?.getAttribute?.("data-anniversary-edit");
+        const index = Number(target?.getAttribute?.("data-index"));
+        const item = getAnniversaryItems()[index];
+        if (!field || !item || field === "showOnCalendar") return;
+        item[field] = target.value;
+      });
+
+      document.querySelector("[data-anniversary-manager]")?.addEventListener("change", (event) => {
+        const target = event.target;
+        const field = target?.getAttribute?.("data-anniversary-edit");
+        const index = Number(target?.getAttribute?.("data-index"));
+        const item = getAnniversaryItems()[index];
+        if (!field || !item) return;
+        item[field] = field === "showOnCalendar" ? target.checked : target.value;
+      });
+
+      document.querySelector("[data-anniversary-manager]")?.addEventListener("click", (event) => {
+        const target = event.target;
+        const indexValue = target?.getAttribute?.("data-remove-anniversary");
+        if (indexValue == null) return;
+        const anniversaries = getAnniversaryItems();
+        const item = anniversaries[Number(indexValue)];
+        const key = item?.sourceId || item?.id;
+        if (key && item?.sourceId && !state.anniversaryDraft.deletedAnniversaryIds.includes(key)) {
+          state.anniversaryDraft.deletedAnniversaryIds.push(key);
+        }
+        anniversaries.splice(Number(indexValue), 1);
+        renderAnniversaryManager();
+        showToast("已删除这个纪念日，记得保存");
+      });
+
+      document.querySelectorAll("[data-image-input]").forEach((input) => {
+        input.addEventListener("change", async () => {
+          const file = input.files?.[0];
+          const path = input.getAttribute("data-image-input");
+          if (!file || !path) return;
+          const preview = document.querySelector(`[data-preview="${path}"]`);
+          const previousSrc = preview?.getAttribute("src") || "";
+          const instantPreviewUrl = URL.createObjectURL(file);
+          if (preview) preview.src = instantPreviewUrl;
+          input.disabled = true;
+          showToast("已显示预览，正在上传并保存...");
+          try {
+            const imageData = await compressImage(file);
+            const imageUrl = await uploadImage(imageData, file.name);
+            setPath(path, imageUrl);
+            if (preview) preview.src = imageUrl;
+            localStorage.setItem(storageKey, JSON.stringify(state));
+            await saveCloudData();
+            showToast("图片已上传并保存到云端");
+          } catch (error) {
+            if (preview) preview.src = previousSrc;
+            showToast(error.message || "图片上传失败，请重新选择后再试");
+          } finally {
+            URL.revokeObjectURL(instantPreviewUrl);
+            input.disabled = false;
+            input.value = "";
+          }
+        });
+      });
+
+      document.querySelector("[data-batch-input]")?.addEventListener("change", async (event) => {
+        const input = event.currentTarget;
+        const files = Array.from(input.files ?? []);
+        if (files.length === 0) return;
+        await cloudLoadPromise;
+        const categorySelect = document.querySelector("[data-batch-category]");
+        const selectedOption = categorySelect?.selectedOptions?.[0];
+        const fallbackCategory = getGalleryCategories()[0] || { key: "", title: "未分类" };
+        const categoryKey = categorySelect?.value || fallbackCategory.key;
+        const category = selectedOption?.dataset?.label || selectedOption?.textContent || fallbackCategory.title;
+        const title = document.querySelector("[data-batch-title]")?.value || "";
+        const caption = document.querySelector("[data-batch-caption]")?.value || "";
+        const pendingImages = [];
+        setBatchUploadBusy(true);
+        let result;
+        try {
+          result = await uploadSelectedFiles(files, {
+            maxSize: 6000,
+            quality: 0.9,
+            preserveOriginal: true,
+            onUploaded(imageUrl, file) {
+              pendingImages.push({
+                image: imageUrl,
+                fileName: file.name,
+                categoryKey,
+                category,
+                title,
+                caption,
+                createdAt: new Date().toISOString(),
+              });
+            },
+            onProgress(message) {
+              setBatchUploadStatus(message);
+            },
+          });
+          if (!result || result.successCount === 0) {
+            const message = result ? getUploadSummary("没有图片需要保存", result) : "没有图片需要保存";
+            setBatchUploadStatus(message);
+            showToast(message);
+            return;
+          }
+          const currentGallery = normalizeGalleryDraft(state.galleryDraft);
+          state.galleryDraft = { ...currentGallery, images: [...currentGallery.images, ...pendingImages] };
+          renderBatchPreview();
+          localStorage.setItem(storageKey, JSON.stringify(state));
+          await saveCloudData();
+          const message = getUploadSummary(`已上传并保存 ${result.successCount} 张图片`, result);
+          setBatchUploadStatus(message);
+          showToast(message);
+        } catch (error) {
+          const message = getUploadErrorMessage(error, "图片已上传并显示，但列表保存失败，请点击保存重试");
+          setBatchUploadStatus(message);
+          showToast(message);
+        } finally {
+          input.value = "";
+          setBatchUploadBusy(false);
+        }
+      });
+
+      document.querySelector("[data-cover-batch-input]")?.addEventListener("change", async (event) => {
+        const input = event.currentTarget;
+        const files = Array.from(input.files ?? []);
+        if (files.length === 0) return;
+        state.profile ??= {};
+        state.profile.covers ??= [];
+        input.disabled = true;
+        let result;
+        try {
+          result = await uploadSelectedFiles(files, {
+            limit: 8,
+            maxSize: 1600,
+            quality: 0.84,
+            onUploaded(imageUrl) {
+              state.profile.covers.push(imageUrl);
+              if (!state.profile.cover) {
+                state.profile.cover = imageUrl;
+                const preview = document.querySelector('[data-preview="profile.cover"]');
+                if (preview) preview.src = imageUrl;
+              }
+              renderCoverPreview();
+            },
+          });
+        } finally {
+          input.disabled = false;
+          input.value = "";
+        }
+        if (!result || result.successCount === 0) {
+          if (result) showToast(getUploadSummary("没有轮播背景需要保存", result));
+          return;
+        }
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        try {
+          await saveCloudData();
+          showToast(getUploadSummary(`已上传并保存 ${result.successCount} 张轮播背景`, result));
+        } catch (error) {
+          showToast(getUploadErrorMessage(error, "轮播背景已上传并显示，但列表保存失败，请点击保存重试"));
+        }
+      });
+
+      document.querySelector("[data-clear-batch]")?.addEventListener("click", () => {
+        state.galleryDraft = { images: [] };
+        renderBatchPreview();
+        showToast("已清空图片列表，保存后同步前台");
+      });
+
+      document.querySelector("[data-batch-preview]")?.addEventListener("input", (event) => {
+        const target = event.target;
+        const field = target?.getAttribute?.("data-gallery-edit");
+        const index = Number(target?.getAttribute?.("data-index"));
+        const item = state.galleryDraft?.images?.[index];
+        if (!field || !item) return;
+        if (field === "title" || field === "caption") {
+          item[field] = target.value;
+        }
+      });
+
+      document.querySelector("[data-batch-preview]")?.addEventListener("change", (event) => {
+        const target = event.target;
+        const field = target?.getAttribute?.("data-gallery-edit");
+        const index = Number(target?.getAttribute?.("data-index"));
+        const item = state.galleryDraft?.images?.[index];
+        if (!field || !item) return;
+        if (field === "category") {
+          const selected = target.selectedOptions?.[0];
+          item.categoryKey = target.value;
+          item.category = selected?.dataset?.label || selected?.textContent || "未分类";
+          renderBatchPreview();
+          showToast("已修改这张图的分类，记得保存");
+        }
+      });
+
+      document.querySelector("[data-batch-preview]")?.addEventListener("click", (event) => {
+        const target = event.target;
+        const figure = target?.closest?.("figure");
+        if (target?.tagName === "IMG" && figure?.getAttribute("data-gallery-source") === "cloud") {
+          const wasEditing = figure.classList.contains("is-editing");
+          document.querySelectorAll("[data-batch-preview] figure.is-editing").forEach((item) => item.classList.remove("is-editing"));
+          figure.classList.toggle("is-editing", !wasEditing);
+          return;
+        }
+        const moveDirection = target?.getAttribute?.("data-move-gallery-image");
+        if (moveDirection) {
+          const currentGallery = normalizeGalleryDraft(state.galleryDraft);
+          const images = currentGallery.images;
+          const index = Number(target.getAttribute("data-index"));
+          const nextIndex = moveDirection === "up" ? index - 1 : index + 1;
+          if (!images[index] || !images[nextIndex]) return;
+          [images[index], images[nextIndex]] = [images[nextIndex], images[index]];
+          state.galleryDraft = { ...currentGallery, images };
+          renderBatchPreview();
+          showToast("已调整图片顺序，记得保存");
+          return;
+        }
+        const indexValue = target?.getAttribute?.("data-remove-gallery-image");
+        if (indexValue == null) return;
+        const index = Number(indexValue);
+        state.galleryDraft?.images?.splice(index, 1);
+        renderBatchPreview();
+        showToast("已删除这张图，记得保存");
+      });
+
+      document.querySelector("[data-clear-covers]")?.addEventListener("click", () => {
+        state.profile ??= {};
+        state.profile.covers = [];
+        renderCoverPreview();
+        showToast("已清空轮播背景图，保存后同步云端");
+      });
+
+      document.querySelectorAll("[data-tab]").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const name = tab.getAttribute("data-tab");
+          document.querySelectorAll("[data-tab]").forEach((item) => {
+            item.setAttribute("aria-selected", String(item === tab));
+          });
+          document.querySelectorAll("[data-panel]").forEach((panel) => {
+            panel.classList.toggle("is-active", panel.getAttribute("data-panel") === name);
+          });
+        });
+      });
+
+      document.querySelector("[data-admin-form]")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        try {
+          await saveCloudData();
+          showToast("已保存到云端");
+        } catch (error) {
+          showToast(error.message || "保存失败，请稍后重试");
+        }
+      });
+
+      document.querySelector("[data-preview-home]")?.addEventListener("click", async () => {
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        try {
+          await saveCloudData();
+          location.href = "/";
+        } catch (error) {
+          showToast(error.message || "保存失败，暂时不能预览");
+        }
+      });
+    </script>
+  </body>
+</html>

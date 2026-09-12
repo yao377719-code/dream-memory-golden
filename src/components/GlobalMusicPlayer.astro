@@ -1,0 +1,75 @@
+---
+import { profile } from "../data/siteDefaults";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+
+function getMusicAudioSource(value?: string) {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (/\.(mp3|m4a|ogg|wav)(\?|$)/i.test(raw)) return raw;
+  const neteaseMatch = raw.match(/[?&]id=(\d+)/) ?? raw.match(/\/song\/(\d+)/) ?? raw.match(/^(\d+)$/);
+  if (neteaseMatch?.[1]) return `https://music.163.com/song/media/outer/url?id=${neteaseMatch[1]}.mp3`;
+  return "";
+}
+
+function getMusicProvider(value?: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.includes("y.qq.com") || raw.includes("qq.com")) return "qq";
+  if (raw.includes("music.163.com") || raw.includes("163cn.tv") || /^\d+$/.test(raw)) return "netease";
+  if (/\.(mp3|m4a|ogg|wav)(\?|$)/i.test(raw)) return "direct";
+  return "";
+}
+
+function getMusicId(value?: string) {
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/[?&]id=(\d+)/) ?? raw.match(/\/song\/(\d+)/) ?? raw.match(/^(\d+)$/);
+  return match?.[1] ?? "";
+}
+
+const musicAudioSource = getMusicAudioSource(profile.musicUrl);
+const musicProvider = getMusicProvider(profile.musicUrl);
+const musicSongId = getMusicId(profile.musicUrl);
+---
+
+<section
+  id="global-music-player"
+  class="side-panel music-panel"
+  data-music-player
+  data-music-provider={musicProvider}
+  data-music-id={musicSongId}
+  data-music-source={musicAudioSource}
+  data-music-url={profile.musicUrl}
+  hidden={!profile.showMusic}
+  transition:persist="global-music-player"
+>
+  <h2 class="section-title" data-cloud-text={editableTitlePaths.music}>{profile.musicModuleTitle}</h2>
+  <div class="music-card">
+    <img class="music-cover" src={profile.musicCover || profile.avatar} alt="音乐封面" data-cloud-image="profile.musicCover" />
+    <div class="music-info">
+      <strong data-cloud-text="profile.musicTitle">{profile.musicTitle || "写给你的一首歌"}</strong>
+      <p data-cloud-text="profile.musicArtist">{profile.musicArtist || "填入网易云歌曲链接后播放"}</p>
+      <div class="music-time">
+        <span data-music-current>0:00</span>
+        <span>/</span>
+        <span data-music-duration>0:00</span>
+      </div>
+    </div>
+  </div>
+  <div class="music-progress-row">
+    <input class="music-progress" type="range" min="0" max="100" value="0" step="0.1" aria-label="播放进度" data-music-progress />
+    <div class="music-volume">
+      <span aria-hidden="true">♪</span>
+      <input type="range" min="0" max="1" value="0.72" step="0.01" aria-label="音量" data-music-volume />
+    </div>
+  </div>
+  <div class="music-actions">
+    <button type="button" class="music-icon-button" data-music-prev aria-label="上一首">|‹</button>
+    <button type="button" class="music-play-button" data-music-toggle aria-label="播放">▶</button>
+    <button type="button" class="music-icon-button" data-music-next aria-label="下一首">›|</button>
+    <button type="button" class="music-icon-button" data-music-list aria-label="播放列表">≡</button>
+  </div>
+  <p class="music-empty" data-music-empty hidden={Boolean(musicAudioSource)}>
+    后台填网易云歌曲链接或音频直链后可以播放。QQ 音乐链接会先识别，但部分歌曲需要平台授权，可能无法直接播放。
+  </p>
+  <audio data-music-audio preload="metadata" src={musicAudioSource}></audio>
+</section>

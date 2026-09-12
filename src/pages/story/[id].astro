@@ -1,0 +1,74 @@
+---
+import { getCollection, render } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { isBlankCustomerMode, modules } from "../../data/siteDefaults";
+import { editableTitlePaths } from "../../data/editableTitles.mjs";
+
+export async function getStaticPaths() {
+  if (isBlankCustomerMode) return [];
+  const memories = await getCollection("timeline");
+  return memories.map((memory) => ({
+    params: { id: memory.id.replace(/\.md$/, "") },
+    props: { memory },
+  }));
+}
+
+const { memory } = Astro.props;
+const { Content } = await render(memory);
+const formatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
+const positionMap = {
+  center: "center center",
+  top: "center top",
+  bottom: "center bottom",
+  left: "left center",
+  right: "right center",
+};
+
+function getObjectPosition(value?: string) {
+  return positionMap[value as keyof typeof positionMap] ?? positionMap.center;
+}
+
+function normalizeTimelineImage(item: string | { image: string; imagePosition?: string }) {
+  if (typeof item === "string") {
+    return { image: item, imagePosition: "center" };
+  }
+
+  return item;
+}
+
+const images = memory.data.images.map(normalizeTimelineImage).filter((item) => item.image);
+---
+
+<BaseLayout title={memory.data.title} current="/#story">
+  <main class="story-page">
+    <a class="back-link" href="/#story">返回<span data-cloud-text={editableTitlePaths.story}>{modules.storyTitle}</span></a>
+    <article class="story-detail memory-card">
+      <header class="story-detail-header">
+        <time datetime={memory.data.date.toISOString()}>{formatter.format(memory.data.date)}</time>
+        <h1>{memory.data.title}</h1>
+        {memory.data.mood && <span>{memory.data.mood}</span>}
+        {memory.data.summary && <p>{memory.data.summary}</p>}
+      </header>
+      <div class="prose">
+        <Content />
+      </div>
+      {images.length > 0 && (
+        <div class="image-grid story-detail-images">
+          {images.map((item) => (
+            <img
+              src={item.image}
+              alt={`${memory.data.title}配图`}
+              loading="lazy"
+              style={`object-position: ${getObjectPosition(item.imagePosition)};`}
+            />
+          ))}
+        </div>
+      )}
+    </article>
+  </main>
+</BaseLayout>

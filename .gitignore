@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.astro/
+.vercel/
+.env
+npm-debug.log*
+
+.wrangler/
+.dev.vars*
+wrangler.jsonc
+.customer/
+test-results/

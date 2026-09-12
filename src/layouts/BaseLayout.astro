@@ -1,0 +1,374 @@
+---
+import { ClientRouter } from "astro:transitions";
+import "../styles/global.css";
+import { navigation, profile } from "../data/siteDefaults";
+import { getTheme, themeMap } from "../data/themes";
+import GlobalMusicPlayer from "../components/GlobalMusicPlayer.astro";
+import { editableTitlePaths } from "../data/editableTitles.mjs";
+
+const { title = profile.nickname, current = "/", cloudTitlePath = "" } = Astro.props;
+const publicCustomerId = import.meta.env.PUBLIC_CUSTOMER_ID;
+const publicProjectName = import.meta.env.PUBLIC_PAGES_PROJECT_NAME;
+const theme = getTheme(profile.themeColor);
+const shellStyle = [
+  `--cover-image: url("${profile.cover}")`,
+  `--accent: ${theme.accent}`,
+  `--accent-soft: ${theme.soft}`,
+  `--accent-hover: ${theme.hover}`,
+  `--accent-strong: ${theme.strong}`,
+  `--accent-shadow: ${theme.shadow}`,
+  `--site-bg: ${theme.bg}`,
+  `--site-bg-soft: ${theme.bgSoft}`,
+  `--paper: ${theme.paper}`,
+  `--line: ${theme.line}`,
+  "--button-text: #ffffff",
+].join("; ");
+const navItems = navigation.items
+  .filter((item) => item.visible)
+  .sort((a, b) => a.order - b.order);
+
+function getNavModule(href: string) {
+  if (href.includes("#about")) return "about";
+  if (href.includes("#story")) return "story";
+  if (href.includes("#gallery") || href.startsWith("/album")) return "gallery";
+  if (href.startsWith("/admin")) return "admin";
+  return "";
+}
+
+function getNavTitlePath(href: string) {
+  if (href.includes("#about")) return editableTitlePaths.about;
+  if (href.includes("#story")) return editableTitlePaths.story;
+  if (href.startsWith("/album")) return editableTitlePaths.albumPage;
+  if (href.includes("#gallery")) return editableTitlePaths.gallery;
+  if (href.startsWith("/admin")) return editableTitlePaths.admin;
+  return "";
+}
+
+function isNavModuleVisible(module: string) {
+  if (module === "about") return profile.showAbout !== false;
+  if (module === "story") return profile.showStory !== false;
+  if (module === "gallery") return profile.showGoodsWall !== false;
+  if (module === "admin") return profile.showAdminEntry !== false;
+  return true;
+}
+---
+
+<!doctype html>
+<html lang="zh-CN" style={shellStyle} data-customer-id={publicCustomerId} data-pages-project={publicProjectName}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=980" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="dream-memory-customer-id" content={publicCustomerId} />
+    <meta name="dream-memory-pages-project" content={publicProjectName} />
+    <title data-cloud-text={cloudTitlePath || undefined}>{title}</title>
+    <script is:inline src="/theme-utils.js"></script>
+    <ClientRouter />
+  </head>
+  <body>
+    <div class="site-shell" style={shellStyle}>
+      <header class="topbar">
+        <nav class="nav" aria-label="主导航">
+          <a class="brand" href="/" data-cloud-text={editableTitlePaths.site}>{profile.nickname}</a>
+          <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav-links" data-nav-toggle>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span class="sr-only">打开导航</span>
+          </button>
+          <div class="nav-links" id="site-nav-links" data-nav-links>
+            {navItems.map((item) => {
+              const module = getNavModule(item.href);
+              return (
+                <a
+                  href={item.href}
+                  aria-current={current === item.href ? "page" : undefined}
+                  data-nav-module={module || undefined}
+                  data-cloud-text={getNavTitlePath(item.href) || undefined}
+                  hidden={!isNavModuleVisible(module)}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
+          </div>
+        </nav>
+      </header>
+      <slot />
+      <div class="global-music-home" data-global-music-home hidden={!profile.showMusic}>
+        <GlobalMusicPlayer />
+      </div>
+    </div>
+    <script id="global-theme-map" type="application/json" set:html={JSON.stringify(themeMap)} is:inline></script>
+    <script>
+      // @ts-nocheck
+      const navToggle = document.querySelector("[data-nav-toggle]");
+      const navLinks = document.querySelector("[data-nav-links]");
+
+      navToggle?.addEventListener("click", () => {
+        const isOpen = navToggle.getAttribute("aria-expanded") === "true";
+        navToggle.setAttribute("aria-expanded", String(!isOpen));
+        navLinks?.classList.toggle("is-open", !isOpen);
+      });
+
+      navLinks?.addEventListener("click", (event) => {
+        if (!(event.target instanceof HTMLAnchorElement)) return;
+        navToggle?.setAttribute("aria-expanded", "false");
+        navLinks.classList.remove("is-open");
+      });
+
+      function getMusicAudioSource(value) {
+        if (!value) return "";
+        const raw = String(value).trim();
+        if (/\.(mp3|m4a|ogg|wav)(\?|$)/i.test(raw)) return raw;
+        const neteaseMatch = raw.match(/[?&]id=(\d+)/) || raw.match(/\/song\/(\d+)/) || raw.match(/^(\d+)$/);
+        if (neteaseMatch?.[1]) return `https://music.163.com/song/media/outer/url?id=${neteaseMatch[1]}.mp3`;
+        return "";
+      }
+
+      function getMusicProvider(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return "";
+        if (raw.includes("y.qq.com") || raw.includes("qq.com")) return "qq";
+        if (raw.includes("music.163.com") || raw.includes("163cn.tv") || /^\d+$/.test(raw)) return "netease";
+        if (/\.(mp3|m4a|ogg|wav)(\?|$)/i.test(raw)) return "direct";
+        return "";
+      }
+
+      async function resolveMusicSource(value) {
+        const directSource = getMusicAudioSource(value);
+        const provider = getMusicProvider(value);
+        if (directSource || !value || provider !== "netease") {
+          return { source: directSource, provider };
+        }
+
+        try {
+          const response = await fetch(`/api/music-resolve?url=${encodeURIComponent(value)}`);
+          const result = await response.json();
+          if (response.ok && result.ok && result.source) {
+            return { source: result.source, provider: result.provider || provider };
+          }
+        } catch {}
+
+        return { source: "", provider };
+      }
+
+      function formatMusicTime(seconds) {
+        if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+        const minutes = Math.floor(seconds / 60);
+        const rest = Math.floor(seconds % 60).toString().padStart(2, "0");
+        return `${minutes}:${rest}`;
+      }
+
+      function moveGlobalMusicPlayer() {
+        const player = document.querySelector("[data-music-player]");
+        if (!player) return;
+        const slot = document.querySelector("[data-music-slot]");
+        const fallback = document.querySelector("[data-global-music-home]");
+        const target = slot || fallback;
+        if (target && player.parentElement !== target) target.append(player);
+        player.classList.toggle("is-floating", !slot);
+      }
+
+      function setupMusicPlayer() {
+        const panel = document.querySelector("[data-music-player]");
+        if (!panel || panel.dataset.bound === "true") return window.__dreamMusicPlayer;
+        const audio = panel.querySelector("[data-music-audio]");
+        const toggle = panel.querySelector("[data-music-toggle]");
+        const progress = panel.querySelector("[data-music-progress]");
+        const volume = panel.querySelector("[data-music-volume]");
+        const current = panel.querySelector("[data-music-current]");
+        const duration = panel.querySelector("[data-music-duration]");
+        const empty = panel.querySelector("[data-music-empty]");
+        const prev = panel.querySelector("[data-music-prev]");
+        const next = panel.querySelector("[data-music-next]");
+        const list = panel.querySelector("[data-music-list]");
+        if (!audio || !toggle || !progress || !volume) return null;
+        panel.dataset.bound = "true";
+
+        function setSource(source, provider = "") {
+          const currentSource = audio.getAttribute("src") || "";
+          if (source && currentSource !== source && audio.paused) {
+            audio.src = source;
+            audio.load();
+          }
+          if (!source && audio.paused) {
+            audio.removeAttribute("src");
+            progress.value = "0";
+            if (current) current.textContent = "0:00";
+            if (duration) duration.textContent = "0:00";
+          }
+          const message = provider === "qq"
+            ? "QQ 音乐链接已识别，但平台通常不开放直接播放地址；如果这首歌播不了，可以先换网易云歌曲链接。"
+            : "后台填网易云歌曲链接或音频直链后可以播放。";
+          if (empty) {
+            empty.textContent = message;
+            empty.hidden = Boolean(source);
+          }
+        }
+
+        function syncTime() {
+          if (current) current.textContent = formatMusicTime(audio.currentTime);
+          if (duration) duration.textContent = formatMusicTime(audio.duration);
+          if (!progress.matches(":active") && Number.isFinite(audio.duration) && audio.duration > 0) {
+            progress.value = String((audio.currentTime / audio.duration) * 100);
+          }
+        }
+
+        audio.volume = Number(volume.value);
+        setSource(panel.dataset.musicSource || "", panel.dataset.musicProvider || "");
+        if (!panel.dataset.musicSource && panel.dataset.musicUrl) {
+          resolveMusicSource(panel.dataset.musicUrl).then(({ source, provider }) => {
+            panel.dataset.musicSource = source;
+            panel.dataset.musicProvider = provider;
+            setSource(source, provider);
+          });
+        }
+        audio.addEventListener("loadedmetadata", syncTime);
+        audio.addEventListener("timeupdate", syncTime);
+        audio.addEventListener("ended", () => {
+          toggle.textContent = "▶";
+          toggle.setAttribute("aria-label", "播放");
+        });
+        audio.addEventListener("pause", () => {
+          toggle.textContent = "▶";
+          toggle.setAttribute("aria-label", "播放");
+        });
+        audio.addEventListener("play", () => {
+          toggle.textContent = "Ⅱ";
+          toggle.setAttribute("aria-label", "暂停");
+        });
+        audio.addEventListener("error", () => {
+          if (empty) {
+            empty.textContent = "这条音乐链接暂时不能直接播放，可以换网易云歌曲 ID 或音频直链试试。";
+            empty.hidden = false;
+          }
+        });
+
+        toggle.addEventListener("click", async () => {
+          if (!audio.getAttribute("src")) {
+            setSource(panel.dataset.musicSource || "", panel.dataset.musicProvider || "");
+          }
+          if (!audio.getAttribute("src")) return;
+          if (audio.paused) {
+            try {
+              await audio.play();
+            } catch {
+              if (empty) {
+                empty.textContent = "浏览器暂时拦截了播放，可以再点一次播放，或换一条可播放的链接。";
+                empty.hidden = false;
+              }
+            }
+          } else {
+            audio.pause();
+          }
+        });
+
+        progress.addEventListener("input", () => {
+          if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+          audio.currentTime = (Number(progress.value) / 100) * audio.duration;
+          syncTime();
+        });
+
+        volume.addEventListener("input", () => {
+          audio.volume = Number(volume.value);
+        });
+
+        prev?.addEventListener("click", () => {
+          audio.currentTime = 0;
+          syncTime();
+        });
+
+        next?.addEventListener("click", () => {
+          audio.currentTime = Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 1) : 0;
+          syncTime();
+        });
+
+        list?.addEventListener("click", () => {
+          if (empty) {
+            empty.textContent = "歌单功能后面可以继续扩展，现在先播放当前这一首。";
+            empty.hidden = false;
+          }
+        });
+
+        window.__dreamMusicPlayer = { setSource };
+        return window.__dreamMusicPlayer;
+      }
+
+      const globalThemeMap = JSON.parse(document.querySelector("#global-theme-map")?.textContent || "{}");
+
+      function getCloudTextValue(source, path) {
+        return String(path || "").split(".").reduce((target, key) => target?.[key], source);
+      }
+
+      function applyCloudTextBindings(data) {
+        document.querySelectorAll("[data-cloud-text]").forEach((node) => {
+          const value = getCloudTextValue(data, node.getAttribute("data-cloud-text"));
+          if (typeof value === "string" && value.length > 0) node.textContent = value;
+        });
+      }
+
+      function setGlobalThemeVars(theme) {
+        (window as any).DreamTheme?.applyThemeVars(theme, [document.documentElement, document.querySelector(".site-shell")]);
+      }
+
+      function setModuleNavigationVisibility(data) {
+        const profile = data?.profile || {};
+        const galleryVisible = profile.showGoodsWall !== false
+          && (!Array.isArray(data?.galleryCategories) || data.galleryCategories.length > 0);
+        const visibility = new Map([
+          ["about", profile?.showAbout],
+          ["story", profile?.showStory],
+          ["gallery", galleryVisible],
+          ["admin", profile?.showAdminEntry],
+        ]);
+        document.querySelectorAll("[data-nav-module]").forEach((link) => {
+          const module = link.getAttribute("data-nav-module");
+          link.hidden = visibility.get(module) === false;
+        });
+      }
+
+      function applyGlobalMusicData(data) {
+        applyCloudTextBindings(data);
+        setGlobalThemeVars((window as any).DreamTheme?.resolveTheme(data?.profile, globalThemeMap));
+        setModuleNavigationVisibility(data);
+        const panel = document.querySelector("[data-music-player]");
+        if (!panel || !data?.profile) return;
+        const showMusic = data.profile.showMusic !== false;
+        panel.hidden = !showMusic;
+        const fallback = document.querySelector("[data-global-music-home]");
+        if (fallback) fallback.hidden = !showMusic;
+        panel.querySelectorAll("[data-cloud-image]").forEach((node) => {
+          const path = node.getAttribute("data-cloud-image");
+          const value = path?.split(".").reduce((target, key) => target?.[key], data);
+          if (value) node.src = value;
+        });
+        const provider = getMusicProvider(data.profile.musicUrl);
+        panel.dataset.musicUrl = data.profile.musicUrl || "";
+        panel.dataset.musicProvider = provider;
+        resolveMusicSource(data.profile.musicUrl).then(({ source, provider }) => {
+          panel.dataset.musicSource = source;
+          panel.dataset.musicProvider = provider;
+          window.__dreamMusicPlayer?.setSource(source, provider);
+        });
+      }
+
+      function bootGlobalMusic() {
+        moveGlobalMusicPlayer();
+        setupMusicPlayer();
+        if (window.__dreamMusicDataLoaded) return;
+        window.__dreamMusicDataLoaded = true;
+        fetch("/api/site-data")
+          .then((response) => (response.ok ? response.json() : null))
+          .then((result) => {
+            if (result?.ok && result.data) applyGlobalMusicData(result.data);
+          })
+          .catch(() => {});
+      }
+
+      document.addEventListener("astro:page-load", bootGlobalMusic);
+      bootGlobalMusic();
+
+    </script>
+  </body>
+</html>
