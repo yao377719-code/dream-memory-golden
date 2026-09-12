@@ -43,7 +43,7 @@ const projectList = JSON.parse(run(npx, [...wrangler, "pages", "project", "list"
 if (projectList.some((item) => item["Project Name"] === projectName)) throw new Error("Pages project name already exists");
 const namespaceList = JSON.parse(run(npx, [...wrangler, "kv", "namespace", "list"]));
 if (namespaceList.some((item) => item.title === projectName)) throw new Error("KV namespace name already exists");
-const kvOutput = run(npx, [...wrangler, "kv", "namespace", "create", projectName, "--remote"]);
+const kvOutput = run(npx, [...wrangler, "kv", "namespace", "create", projectName]);
 const kvId = kvOutput.match(/"id"\s*:\s*"([0-9a-f]{32})"/)?.[1];
 if (!kvId) throw new Error("KV was created but its namespace ID could not be parsed; stop and inspect before retrying");
 run(npx, [...wrangler, "pages", "project", "create", projectName, "--production-branch", customerId]);
