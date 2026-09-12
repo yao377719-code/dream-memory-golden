@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
+import path from "node:path";
 import { loadCustomerConfig } from "./lib/customer-config.mjs";
 
 const arg = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : ""; };
@@ -20,8 +21,8 @@ if (!html.includes(identity.customerId) || !html.includes(identity.projectName) 
 const own = await fetch(`${identity.siteUrl}/api/admin-data`, { headers: { "x-admin-password": password } });
 const wrong = await fetch(`${identity.siteUrl}/api/admin-data`, { headers: { "x-admin-password": `${password}-wrong` } });
 if (own.status !== 200 || wrong.status !== 401) throw new Error("password isolation failed");
-const wrangler = process.platform === "win32" ? "npx.cmd" : "npx";
-const keys = spawnSync(wrangler, ["--no-install", "wrangler", "kv", "key", "list", "--namespace-id", identity.kvId, "--remote"], { encoding: "utf8", shell: process.platform === "win32" });
+const wranglerCli = path.join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
+const keys = spawnSync(process.execPath, [wranglerCli, "kv", "key", "list", "--namespace-id", identity.kvId, "--remote"], { encoding: "utf8" });
 if (keys.status !== 0) throw new Error("unable to list the new KV namespace");
 if (JSON.parse(keys.stdout).length !== 0) throw new Error("new customer KV is not empty");
 console.log("Live blank-customer acceptance passed");

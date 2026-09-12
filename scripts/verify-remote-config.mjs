@@ -10,11 +10,10 @@ if (i < 0 || !process.argv[i + 1]) throw new Error("--config is required");
 const { identity } = await loadCustomerConfig(process.argv[i + 1]);
 const temporary = await mkdtemp(path.join(os.tmpdir(), "dream-memory-remote-audit-"));
 try {
-  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-  const result = spawnSync(npx, ["--prefix", process.cwd(), "wrangler", "pages", "download", "config", identity.projectName, "--force"], {
+  const wranglerCli = path.join(process.cwd(), "node_modules", "wrangler", "bin", "wrangler.js");
+  const result = spawnSync(process.execPath, [wranglerCli, "pages", "download", "config", identity.projectName, "--force"], {
     cwd: temporary,
     encoding: "utf8",
-    shell: process.platform === "win32",
   });
   if (result.status !== 0) throw new Error(result.stderr || "unable to download Pages configuration");
   const toml = await readFile(path.join(temporary, "wrangler.toml"), "utf8");
