@@ -34,8 +34,15 @@ function gitBlobHash(source) {
 test("gallery frontend source matches bfab755 except blank-category integration and TS annotations", async () => {
   const read = (name) => readFile(new URL(`../src/${name}`, import.meta.url), "utf8");
   const css = await read("styles/global.css");
-  const album = await read("pages/album.astro");
-  const index = (await read("pages/index.astro")).replace(/^    \/\/ @ts-nocheck\r?\n/gm, "");
+  const restoreLegacyDataFetch = (source, applyExpression) => source.replace(
+    /    window\.__dreamRegisterSiteInitializer\?\.\(\(result\) => \{\r?\n      if \(result\?\.data\) [^\r\n]+\r?\n    \}\);/,
+    `    fetch("/api/site-data")\n      .then((response) => (response.ok ? response.json() : null))\n      .then((result) => {\n        if (result?.ok && result.data) ${applyExpression};\n      })\n      .catch(() => {});`,
+  );
+  const album = restoreLegacyDataFetch(await read("pages/album.astro"), "renderCloudGallery(result.data)");
+  const index = restoreLegacyDataFetch(
+    (await read("pages/index.astro")).replace(/^    \/\/ @ts-nocheck\r?\n/gm, ""),
+    "applyCloudData(result.data)",
+  );
   let component = await read("components/GalleryCategories.astro");
   component = component.replace('import { defaultGalleryCategories, isBlankCustomerMode } from "../data/siteDefaults";', 'import { isBlankCustomerMode } from "../data/siteDefaults";');
   component = component.replace('const categories = isBlankCustomerMode\n  ? defaultGalleryCategories.map((data) => ({ id: data.key, data }))\n  : (await getCollection("galleryCategories")).sort((a, b) => a.data.order - b.data.order);', 'const categories = (await getCollection("galleryCategories")).sort((a, b) => a.data.order - b.data.order);');

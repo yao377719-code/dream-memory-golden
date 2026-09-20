@@ -835,11 +835,8 @@ function anniversaryText(date: Date, kind: "since" | "countdown") {
       document.dispatchEvent(new CustomEvent("dream-gallery-update", { detail: { instanceId: "home-gallery", photos: dynamicPhotos } }));
     }
 
-    fetch("/api/site-data")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((result) => {
-        if (result?.ok && result.data) applyCloudData(result.data);
-      })
-      .catch(() => {});
+    window.__dreamRegisterSiteInitializer?.((result) => {
+      if (result?.data) applyCloudData(result.data);
+    });
   </script>
 </BaseLayout>

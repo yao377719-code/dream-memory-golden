@@ -26,6 +26,18 @@ npm run customer:verify -- --config tests/fixtures/wrangler.blank.json
 npm run customer:build -- --config tests/fixtures/wrangler.blank.json
 ```
 
+发布候选版必须在两个相互独立、只用于测试的站点上运行黄金验收基线。所有地址、密码和实例配置只通过环境变量传入，不得写入仓库：
+
+```powershell
+$env:GOLDEN_TEST_URL = "https://<独立验收站>.pages.dev"
+$env:GOLDEN_ADMIN_PASSWORD = "<六位测试密码>"
+$env:GOLDEN_ISOLATION_URL = "https://<独立隔离对照站>.pages.dev"
+$env:GOLDEN_ACCEPTANCE_OUTPUT = "<仓库之外的截图目录>"
+npm run golden:accept
+```
+
+该验收会写入纯虚构数据，覆盖人物资料、故事、语录、纪念日与日历、音乐、主题、相册分类管理、单张及批量上传，并检查刷新、退出重登、错误密码、跨站隔离、桌面/手机截图、API 失败重试和首次渲染门禁。只能对专用测试实例执行，不能对待售库存或客户站执行。
+
 测试 fixture 使用不可部署的全零 KV ID，仅用于本地结构和构建验证；正式开站脚本会写入 Cloudflare 返回的真实唯一 ID。
 
 ## 新客户完整流程

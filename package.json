@@ -17,6 +17,7 @@
     "customer:batch": "node scripts/provision-batch.mjs",
     "customer:mark-sold": "node scripts/mark-customer-sold.mjs",
     "customer:accept": "node scripts/accept-customer.mjs",
+    "golden:accept": "node scripts/accept-golden-release.mjs",
     "audit:golden": "node scripts/audit-golden.mjs",
     "test": "node --test tests/*.test.mjs",
     "cf:dev": "wrangler pages dev dist",

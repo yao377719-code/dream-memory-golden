@@ -54,7 +54,7 @@ function isNavModuleVisible(module: string) {
 ---
 
 <!doctype html>
-<html lang="zh-CN" style={shellStyle} data-customer-id={publicCustomerId} data-pages-project={publicProjectName}>
+<html lang="zh-CN" style={shellStyle} data-customer-id={publicCustomerId} data-pages-project={publicProjectName} data-site-init="loading">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=980" />
@@ -62,10 +62,128 @@ function isNavModuleVisible(module: string) {
     <meta name="dream-memory-customer-id" content={publicCustomerId} />
     <meta name="dream-memory-pages-project" content={publicProjectName} />
     <title data-cloud-text={cloudTitlePath || undefined}>{title}</title>
+    <style is:inline>
+      html[data-site-init="loading"] body,
+      html[data-site-init="error"] body {
+        background: #f3f4f6 !important;
+      }
+
+      html[data-site-init="loading"] .site-shell,
+      html[data-site-init="error"] .site-shell {
+        visibility: hidden;
+      }
+
+      .site-bootstrap {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #f3f4f6;
+        color: #30323a;
+        font-family: Inter, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      .site-bootstrap-card {
+        display: grid;
+        justify-items: center;
+        gap: 12px;
+        width: min(360px, 100%);
+        padding: 24px;
+        border: 1px solid #e1e3e8;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 16px 42px rgba(35, 38, 46, 0.08);
+        text-align: center;
+      }
+
+      .site-bootstrap-spinner {
+        width: 30px;
+        aspect-ratio: 1;
+        border: 3px solid #d9dce3;
+        border-top-color: #717684;
+        border-radius: 50%;
+        animation: site-bootstrap-spin 0.8s linear infinite;
+      }
+
+      .site-bootstrap p {
+        margin: 0;
+        color: #666b77;
+        line-height: 1.65;
+      }
+
+      .site-bootstrap button {
+        min-height: 40px;
+        padding: 8px 16px;
+        border: 1px solid #cfd2da;
+        border-radius: 8px;
+        background: #fff;
+        color: #30323a;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+      }
+
+      html[data-site-init="ready"] .site-bootstrap {
+        display: none;
+      }
+
+      html[data-site-init="error"] .site-bootstrap-spinner {
+        display: none;
+      }
+
+      @keyframes site-bootstrap-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .site-bootstrap-spinner { animation: none; }
+      }
+    </style>
+    <script is:inline data-astro-rerun>
+      (() => {
+        const root = document.documentElement;
+        root.dataset.siteInit = "loading";
+        const expectedCustomerId = root.dataset.customerId || "";
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 12000);
+        const promise = fetch("/api/site-data", {
+          headers: { "cache-control": "no-cache" },
+          signal: controller.signal,
+        }).then(async (response) => {
+          if (!response.ok) throw new Error(`站点数据读取失败（${response.status}）`);
+          const result = await response.json();
+          if (!result?.ok) throw new Error(result?.message || "站点数据读取失败");
+          if (expectedCustomerId && result.customerId !== expectedCustomerId) {
+            throw new Error("站点身份校验失败");
+          }
+          return result;
+        }).finally(() => window.clearTimeout(timeout));
+
+        promise.catch(() => {});
+        window.__dreamSiteDataPromise = promise;
+        window.__dreamSiteInitializers = [];
+        window.__dreamRegisterSiteInitializer = (initializer) => {
+          const task = promise.then(initializer);
+          task.catch(() => {});
+          window.__dreamSiteInitializers.push(task);
+          return task;
+        };
+      })();
+    </script>
     <script is:inline src="/theme-utils.js"></script>
     <ClientRouter />
   </head>
   <body>
+    <div class="site-bootstrap" data-site-bootstrap role="status" aria-live="polite">
+      <div class="site-bootstrap-card">
+        <span class="site-bootstrap-spinner" aria-hidden="true"></span>
+        <strong data-site-bootstrap-title>正在加载专属小站…</strong>
+        <p data-site-bootstrap-message>正在读取当前站点的主题和内容。</p>
+        <button type="button" data-site-bootstrap-retry hidden>重新加载</button>
+      </div>
+    </div>
     <div class="site-shell" style={shellStyle}>
       <header class="topbar">
         <nav class="nav" aria-label="主导航">
@@ -353,19 +471,50 @@ function isNavModuleVisible(module: string) {
         });
       }
 
-      function bootGlobalMusic() {
-        moveGlobalMusicPlayer();
-        setupMusicPlayer();
-        if (window.__dreamMusicDataLoaded) return;
-        window.__dreamMusicDataLoaded = true;
-        fetch("/api/site-data")
-          .then((response) => (response.ok ? response.json() : null))
-          .then((result) => {
-            if (result?.ok && result.data) applyGlobalMusicData(result.data);
-          })
-          .catch(() => {});
+      function setSiteInitState(state, message = "") {
+        document.documentElement.dataset.siteInit = state;
+        const title = document.querySelector("[data-site-bootstrap-title]");
+        const detail = document.querySelector("[data-site-bootstrap-message]");
+        const retry = document.querySelector("[data-site-bootstrap-retry]");
+        if (state === "error") {
+          if (title) title.textContent = "暂时无法加载网站";
+          if (detail) detail.textContent = message || "请检查网络后重试。";
+          if (retry) retry.hidden = false;
+        } else if (retry) {
+          retry.hidden = true;
+        }
       }
 
+      function revealInitializedSite() {
+        requestAnimationFrame(() => requestAnimationFrame(() => setSiteInitState("ready")));
+      }
+
+      function bootGlobalMusic() {
+        const shell = document.querySelector(".site-shell");
+        if (!shell || shell.dataset.siteBootStarted === "true") return;
+        shell.dataset.siteBootStarted = "true";
+        moveGlobalMusicPlayer();
+        setupMusicPlayer();
+        const register = window.__dreamRegisterSiteInitializer;
+        if (typeof register !== "function") {
+          setSiteInitState("error", "初始化程序没有正确启动，请重新加载。 ");
+          return;
+        }
+        register((result) => {
+          if (result?.data) applyGlobalMusicData(result.data);
+        });
+        Promise.all(window.__dreamSiteInitializers || [])
+          .then(revealInitializedSite)
+          .catch((error) => {
+            const message = error?.name === "AbortError"
+              ? "读取超时，请检查网络后重试。"
+              : error?.message || "请检查网络后重试。";
+            setSiteInitState("error", message);
+          });
+      }
+
+      document.querySelector("[data-site-bootstrap-retry]")?.addEventListener("click", () => location.reload());
+      document.addEventListener("astro:before-preparation", () => setSiteInitState("loading"));
       document.addEventListener("astro:page-load", bootGlobalMusic);
       bootGlobalMusic();
 

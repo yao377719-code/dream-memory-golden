@@ -174,11 +174,8 @@ import { editableTitlePaths } from "../data/editableTitles.mjs";
       document.dispatchEvent(new CustomEvent("dream-gallery-update", { detail: { instanceId: "album-gallery", photos: dynamicPhotos } }));
     }
 
-    fetch("/api/site-data")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((result) => {
-        if (result?.ok && result.data) renderCloudGallery(result.data);
-      })
-      .catch(() => {});
+    window.__dreamRegisterSiteInitializer?.((result) => {
+      if (result?.data) renderCloudGallery(result.data);
+    });
   </script>
 </BaseLayout>

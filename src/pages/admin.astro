@@ -85,7 +85,7 @@ const initialData = {
 ---
 
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-admin-init="loading">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -120,6 +120,85 @@ const initialData = {
         overflow-x: hidden;
         color: var(--ink);
         background: linear-gradient(180deg, var(--site-bg), var(--site-bg-soft));
+      }
+
+      html[data-admin-init="loading"] body,
+      html[data-admin-init="error"] body {
+        background: #f3f4f6;
+      }
+
+      html[data-admin-init="loading"] [data-login],
+      html[data-admin-init="loading"] [data-admin],
+      html[data-admin-init="error"] [data-login],
+      html[data-admin-init="error"] [data-admin] {
+        visibility: hidden;
+      }
+
+      .admin-bootstrap {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #f3f4f6;
+        color: #30323a;
+      }
+
+      .admin-bootstrap-card {
+        display: grid;
+        justify-items: center;
+        gap: 12px;
+        width: min(360px, 100%);
+        padding: 24px;
+        border: 1px solid #e1e3e8;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 16px 42px rgba(35, 38, 46, 0.08);
+        text-align: center;
+      }
+
+      .admin-bootstrap-spinner {
+        width: 30px;
+        aspect-ratio: 1;
+        border: 3px solid #d9dce3;
+        border-top-color: #717684;
+        border-radius: 50%;
+        animation: admin-bootstrap-spin 0.8s linear infinite;
+      }
+
+      .admin-bootstrap p {
+        margin: 0;
+        color: #666b77;
+        line-height: 1.65;
+      }
+
+      .admin-bootstrap button {
+        min-height: 40px;
+        padding: 8px 16px;
+        border: 1px solid #cfd2da;
+        border-radius: 8px;
+        background: #fff;
+        color: #30323a;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+      }
+
+      html[data-admin-init="ready"] .admin-bootstrap {
+        display: none;
+      }
+
+      html[data-admin-init="error"] .admin-bootstrap-spinner {
+        display: none;
+      }
+
+      @keyframes admin-bootstrap-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .admin-bootstrap-spinner { animation: none; }
       }
 
       button,
@@ -954,6 +1033,14 @@ const initialData = {
     </style>
   </head>
   <body>
+    <div class="admin-bootstrap" data-admin-bootstrap role="status" aria-live="polite">
+      <div class="admin-bootstrap-card">
+        <span class="admin-bootstrap-spinner" aria-hidden="true"></span>
+        <strong data-admin-bootstrap-title>正在准备管理后台…</strong>
+        <p data-admin-bootstrap-message>正在确认登录状态和站点数据。</p>
+        <button type="button" data-admin-bootstrap-retry hidden>重新加载</button>
+      </div>
+    </div>
     <div class="login-wrap" data-login>
       <section class="login-card">
         <h1>进入后台</h1>
@@ -1480,6 +1567,25 @@ const initialData = {
       let savedThemeSnapshot = null;
       let cloudLoadPromise = Promise.resolve(true);
       let cloudSaveQueue = Promise.resolve();
+      let cloudLoadFailure = "";
+
+      function setAdminInitState(value, message = "") {
+        document.documentElement.dataset.adminInit = value;
+        const title = document.querySelector("[data-admin-bootstrap-title]");
+        const detail = document.querySelector("[data-admin-bootstrap-message]");
+        const retry = document.querySelector("[data-admin-bootstrap-retry]");
+        if (value === "error") {
+          if (title) title.textContent = "暂时无法加载后台";
+          if (detail) detail.textContent = message || "请检查网络后重试。";
+          if (retry) retry.hidden = false;
+        } else if (retry) {
+          retry.hidden = true;
+        }
+      }
+
+      function revealInitializedAdmin() {
+        requestAnimationFrame(() => requestAnimationFrame(() => setAdminInitState("ready")));
+      }
 
       function normalizeKey(value) {
         return String(value || "")
@@ -1962,12 +2068,21 @@ const initialData = {
       }
 
       async function loadCloudData(password) {
+        cloudLoadFailure = "";
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 12000);
         try {
           const response = await fetch(cloudEndpoint, {
             headers: { "x-admin-password": password },
+            signal: controller.signal,
           });
-          if (!response.ok) return false;
+          if (response.status === 401) {
+            cloudLoadFailure = "unauthorized";
+            return false;
+          }
+          if (!response.ok) throw new Error(`后台数据读取失败（${response.status}）`);
           const result = await response.json();
+          if (!result.ok) throw new Error(result.message || "后台数据读取失败");
           if (result.ok && result.data) {
             state = mergeStateWithDefaults(result.data);
             localStorage.setItem(storageKey, JSON.stringify(state));
@@ -1976,9 +2091,16 @@ const initialData = {
           }
           if (result.ok) rememberSavedTheme();
           return Boolean(result.ok);
-        } catch {
+        } catch (error) {
+          cloudLoadFailure = "network";
           showToast("暂时没有读取到已保存内容，请稍后重试");
+          setAdminInitState(
+            "error",
+            error?.name === "AbortError" ? "读取超时，请检查网络后重试。" : error?.message || "请检查网络后重试。",
+          );
           return false;
+        } finally {
+          window.clearTimeout(timeout);
         }
       }
 
@@ -2259,12 +2381,17 @@ const initialData = {
         }
       }
 
-      if (sessionStorage.getItem(loginKey) === "true") {
+      const hasSavedLogin = sessionStorage.getItem(loginKey) === "true";
+      if (hasSavedLogin) {
         cloudLoadPromise = loadCloudData(sessionStorage.getItem(passwordKey) || "").then((authenticated) => {
-          if (authenticated) showAdmin();
+          if (authenticated) {
+            showAdmin();
+            revealInitializedAdmin();
+          }
           else {
             sessionStorage.removeItem(loginKey);
             sessionStorage.removeItem(passwordKey);
+            if (cloudLoadFailure !== "network") revealInitializedAdmin();
           }
           return authenticated;
         });
@@ -2276,7 +2403,7 @@ const initialData = {
         const password = new FormData(form).get("password");
         const authenticated = await loadCloudData(password);
         if (!authenticated) {
-          showToast("密码不对，请检查发给你的后台密码");
+          if (cloudLoadFailure === "unauthorized") showToast("密码不对，请检查发给你的后台密码");
           return;
         }
         sessionStorage.setItem(loginKey, "true");
@@ -2319,6 +2446,8 @@ const initialData = {
       });
       hydrateForm();
       rememberSavedTheme();
+      document.querySelector("[data-admin-bootstrap-retry]")?.addEventListener("click", () => location.reload());
+      if (!hasSavedLogin) revealInitializedAdmin();
 
       document.querySelector("[data-custom-theme-picker]")?.addEventListener("input", (event) => {
         const normalized = window.DreamTheme?.normalizeHex(event.currentTarget.value) || "";
