@@ -29,6 +29,7 @@ test("admin login and authenticated UI use the same loading and failure gate", a
   const admin = await read("src/pages/admin.astro");
 
   assert.match(admin, /data-admin-init="loading"/);
+  assert.match(admin, /<style is:inline>[\s\S]*?html\[data-admin-init="loading"\] \[data-login\]/);
   assert.match(admin, /html\[data-admin-init="loading"\] \[data-login\]/);
   assert.match(admin, /html\[data-admin-init="loading"\] \[data-admin\]/);
   assert.match(admin, /data-admin-bootstrap-retry/);

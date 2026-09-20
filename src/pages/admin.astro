@@ -91,47 +91,17 @@ const initialData = {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
     <title>网站管理后台</title>
-    <script is:inline src="/theme-utils.js"></script>
-    <style>
-      :root {
-        color-scheme: light;
-        --ink: #27222a;
-        --muted: #746977;
-        --line: #e8dfe5;
-        --paper: #fffafc;
-        --accent: #8165b1;
-        --accent-soft: #eee6fb;
-        --accent-hover: #f6f1ff;
-        --accent-strong: #694aa0;
-        --accent-shadow: rgba(129, 101, 177, 0.24);
-        --button-text: #ffffff;
-        --site-bg: #f5f1f7;
-        --site-bg-soft: #ebe4f0;
-        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100vh;
-        overflow-x: hidden;
-        color: var(--ink);
-        background: linear-gradient(180deg, var(--site-bg), var(--site-bg-soft));
-      }
-
+    <style is:inline>
       html[data-admin-init="loading"] body,
       html[data-admin-init="error"] body {
-        background: #f3f4f6;
+        background: #f3f4f6 !important;
       }
 
       html[data-admin-init="loading"] [data-login],
       html[data-admin-init="loading"] [data-admin],
       html[data-admin-init="error"] [data-login],
       html[data-admin-init="error"] [data-admin] {
-        visibility: hidden;
+        visibility: hidden !important;
       }
 
       .admin-bootstrap {
@@ -143,6 +113,7 @@ const initialData = {
         padding: 24px;
         background: #f3f4f6;
         color: #30323a;
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
       }
 
       .admin-bootstrap-card {
@@ -199,6 +170,37 @@ const initialData = {
 
       @media (prefers-reduced-motion: reduce) {
         .admin-bootstrap-spinner { animation: none; }
+      }
+    </style>
+    <script is:inline src="/theme-utils.js"></script>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #27222a;
+        --muted: #746977;
+        --line: #e8dfe5;
+        --paper: #fffafc;
+        --accent: #8165b1;
+        --accent-soft: #eee6fb;
+        --accent-hover: #f6f1ff;
+        --accent-strong: #694aa0;
+        --accent-shadow: rgba(129, 101, 177, 0.24);
+        --button-text: #ffffff;
+        --site-bg: #f5f1f7;
+        --site-bg-soft: #ebe4f0;
+        font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow-x: hidden;
+        color: var(--ink);
+        background: linear-gradient(180deg, var(--site-bg), var(--site-bg-soft));
       }
 
       button,

@@ -50,6 +50,8 @@ const results = {
   publicColdStartGate: false,
   adminColdStartGate: false,
   apiFailureRetry: false,
+  adminApiFailureRetry: false,
+  frontAdminRoundTrip: false,
   consoleErrors: [],
 };
 
@@ -97,6 +99,19 @@ async function save(page) {
   const response = page.waitForResponse((item) => item.url().endsWith("/api/admin-data") && item.request().method() === "POST");
   await page.getByRole("button", { name: "保存到云端", exact: true }).click();
   assert.equal((await response).status(), 200);
+}
+
+async function getWithRetry(context, url, options = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await context.get(url, options);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }
 
 async function assertNoPrematureVisibleFrame(page, type) {
@@ -208,7 +223,7 @@ try {
   const front = await desktop.newPage();
   watchErrors(front, "desktop-front");
   await front.goto(`${siteUrl}/`, { waitUntil: "networkidle" });
-  await front.locator(".site-shell").waitFor({ state: "visible" });
+  await front.waitForFunction(() => document.documentElement.dataset.siteInit === "ready");
   const frontText = await front.locator("body").innerText();
   for (const value of [values.nickname, values.role, values.intro, values.about, values.story, values.quote, values.anniversary, values.gallery]) {
     assert.ok(frontText.includes(value), value);
@@ -225,14 +240,14 @@ try {
   results.logoutRelogin = true;
 
   const api = await playwrightRequest.newContext({ baseURL: siteUrl });
-  assert.equal((await api.get("/api/admin-data", { headers: { "x-admin-password": `${password}x` } })).status(), 401);
+  assert.equal((await getWithRetry(api, "/api/admin-data", { headers: { "x-admin-password": `${password}x` } })).status(), 401);
   results.wrongPassword = true;
-  const ownData = await (await api.get("/api/site-data")).json();
+  const ownData = await (await getWithRetry(api, "/api/site-data")).json();
   const uploadedPath = ownData.data.galleryDraft.images[0].image;
   const isolatedApi = await playwrightRequest.newContext({ baseURL: isolationUrl });
-  assert.equal((await isolatedApi.get("/api/admin-data", { headers: { "x-admin-password": password } })).status(), 401);
-  assert.equal((await isolatedApi.get(uploadedPath)).status(), 404);
-  const isolatedData = await (await isolatedApi.get("/api/site-data")).json();
+  assert.equal((await getWithRetry(isolatedApi, "/api/admin-data", { headers: { "x-admin-password": password } })).status(), 401);
+  assert.equal((await getWithRetry(isolatedApi, uploadedPath)).status(), 404);
+  const isolatedData = await (await getWithRetry(isolatedApi, "/api/site-data")).json();
   assert.notEqual(isolatedData.customerId, ownData.customerId);
   assert.equal(JSON.stringify(isolatedData.data || {}).includes(marker), false);
   results.crossSiteIsolation = true;
@@ -268,11 +283,27 @@ try {
   await coldAdmin.reload({ waitUntil: "domcontentloaded" });
   await coldAdmin.waitForTimeout(150);
   assert.equal(await coldAdmin.locator("[data-admin-bootstrap]").isVisible(), true);
-  assert.equal(await coldAdmin.locator("[data-admin]").evaluate((node) => getComputedStyle(node).visibility), "hidden");
+  assert.equal(await coldAdmin.locator("[data-admin]").isVisible(), false);
   await coldAdmin.waitForFunction(() => document.documentElement.dataset.adminInit === "ready", null, { timeout: 30000 });
   await assertNoPrematureVisibleFrame(coldAdmin, "admin");
   results.adminColdStartGate = true;
   await adminCold.close();
+
+  const transition = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const transitionPage = await transition.newPage();
+  await transitionPage.goto(`${siteUrl}/`, { waitUntil: "networkidle" });
+  await transitionPage.waitForFunction(() => document.documentElement.dataset.siteInit === "ready");
+  await transitionPage.getByRole("link", { name: /管理入口/ }).click();
+  await transitionPage.waitForURL("**/admin/");
+  await transitionPage.waitForFunction(() => document.documentElement.dataset.adminInit === "ready");
+  await transitionPage.getByLabel("后台密码").fill(password);
+  await transitionPage.getByRole("button", { name: "进入", exact: true }).click();
+  await transitionPage.locator("[data-admin]").waitFor({ state: "visible" });
+  await transitionPage.getByRole("link", { name: "看首页", exact: true }).click();
+  await transitionPage.waitForURL(`${siteUrl}/`);
+  await transitionPage.waitForFunction(() => document.documentElement.dataset.siteInit === "ready");
+  results.frontAdminRoundTrip = true;
+  await transition.close();
 
   const failure = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const failedFront = await failure.newPage();
@@ -283,6 +314,16 @@ try {
   assert.match(await failedFront.locator("[data-site-bootstrap-message]").innerText(), /503|失败|不可用/);
   results.apiFailureRetry = true;
   await failure.close();
+
+  const adminFailure = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const failedAdmin = await adminFailure.newPage();
+  await login(failedAdmin);
+  await failedAdmin.route("**/api/admin-data", (route) => route.fulfill({ status: 503, contentType: "application/json", body: '{"ok":false}' }));
+  await failedAdmin.reload({ waitUntil: "domcontentloaded" });
+  await failedAdmin.waitForFunction(() => document.documentElement.dataset.adminInit === "error");
+  assert.equal(await failedAdmin.locator("[data-admin-bootstrap-retry]").isVisible(), true);
+  results.adminApiFailureRetry = true;
+  await adminFailure.close();
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
   const mobileFront = await mobile.newPage();
