@@ -13,6 +13,20 @@
 
 同一个本地实例配置同时定义 Pages 项目、Functions `CUSTOMER_ID`、`PAGES_PROJECT_NAME` 和 `DREAM_MEMORY_STORE`。构建脚本从该配置派生前端 ID 和固定网址；运行时校验 Pages hostname，远端验收再次比较前端、Functions 和下载后的 Pages 配置。
 
+正式交付前必须确认前端 `CUSTOMER_ID`、Functions `CUSTOMER_ID`、Pages 项目名、固定 hostname、KV namespace/binding 和远程生产部署配置完全对应。Astro 负责静态页面，`/functions/api/*` 由 Cloudflare Pages Functions 提供；必须使用完整 Wrangler 客户建站流程，不能只部署 `dist` 静态目录。
+
+## 首次渲染保证
+
+前台、后台登录页和后台页面在客户 KV 数据与主题完成初始化前只显示中性加载状态，不得短暂绘制默认暖金色空白站。该保证覆盖冷启动、刷新及前后台往返；请求超时或失败时必须显示明确错误和重试入口，不能永久隐藏页面。
+
+## 空白与验收数据保证
+
+blank 客户站不得携带验收文字、测试图片或任何其他客户数据。自动验收数据只能写入独立测试站的 KV，不得进入模板源码、新客户默认数据或待售库存站。新 Agent 必须从指定的正式候选标签或正式标签 fresh clone 建站，禁止从旧目录、TT、TT-2、Demo、原站或客户实例复制。
+
+每次私密交付回复必须直接列出前台链接、后台链接、六位后台密码、`CUSTOMER_ID`、Pages 项目名、KV namespace 和部署 commit；密码不能只交付到剪贴板。密码、GitHub Token、Cloudflare Token 及其他 Secret 不得进入源码、Git、README、命令日志、截图或可公开传播的报告。
+
 ## 发布门槛
 
 必须通过：Node 单元测试、Astro check、blank 构建、黄金源码审计、构建产物审计、开站脚本 plan 模式。下一阶段才能创建独立 GitHub 仓库和全新测试实例。
+
+正式候选版还必须完成依赖安装、blank 生产构建、Git diff/status 检查和敏感信息扫描；自动验收只能使用独立测试站及其 KV。
