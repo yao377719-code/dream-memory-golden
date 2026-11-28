@@ -54,3 +54,64 @@ test("a failed KV stage can be queried from the collector after it stops", async
   assert.doesNotMatch(saved, /synthetic-(?:query|password|cookie|customer-content|private-error|collector-credential)/);
   console.log("Durable test log request ID " + requestId);
 });
+
+
+test("an isolated Pages Functions runtime forwards the request ID to durable storage", async () => {
+  const { build } = await import("esbuild");
+  const { Miniflare } = await import("miniflare");
+  const { setTimeout: delay } = await import("node:timers/promises");
+  await mkdir(".customer", { recursive: true });
+  const directory = await mkdtemp(path.resolve(".customer", "runtime-receipt-"));
+  const receipt = path.join(directory, "events.jsonl");
+  const entry = [
+    'import { onRequest } from "./functions/api/_middleware.mjs";',
+    'import { onRequestPost } from "./functions/api/admin-data.mjs";',
+    'export default { fetch(request,env,ctx) {',
+    '  const scoped = { ...env, DREAM_MEMORY_STORE: { put() { throw Error("simulated private failure"); } } };',
+    '  const context = { request, env: scoped, data: {}, waitUntil: (task) => ctx.waitUntil(task) };',
+    '  context.next = () => onRequestPost(context);',
+    '  return onRequest(context);',
+    '} };',
+  ].join("\n");
+  const bundled = await build({ stdin: { contents: entry, resolveDir: process.cwd() }, bundle: true, write: false, format: "esm" });
+  const miniflare = new Miniflare({
+    compatibilityDate: "2026-07-10",
+    modules: [{ type: "ESModule", path: "functions-worker.mjs", contents: bundled.outputFiles[0].text }],
+    bindings: {
+      CUSTOMER_ID: "customer-test-a1b2c3", PAGES_PROJECT_NAME: "dream-memory-test-a1b2c3", ADMIN_PASSWORD: "000015",
+      DREAM_MEMORY_VERSION: "b".repeat(40), DREAM_MEMORY_LOG_ENDPOINT: "https://log-fixture.invalid/ingest",
+      DREAM_MEMORY_LOG_TOKEN: "synthetic-access",
+    },
+    outboundService: async (request) => {
+      assert.equal(request.url, "https://log-fixture.invalid/ingest");
+      assert.equal(request.headers.get("authorization"), "Bearer synthetic-access");
+      await appendFile(receipt, await request.text() + "\n");
+      return new Response(null, { status: 204 });
+    },
+  });
+  let id;
+  try {
+    const response = await miniflare.dispatchFetch("https://dream-memory-test-a1b2c3.pages.dev/api/admin-data?private=synthetic-url", {
+      method: "POST",
+      headers: { "x-admin-password": "000015", cookie: "synthetic-cookie" },
+      body: JSON.stringify({ profile: { nickname: "synthetic-customer-content" } }),
+    });
+    assert.equal(response.status, 500);
+    id = response.headers.get("x-request-id");
+    assert.ok(id);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const saved = await readFile(receipt, "utf8").catch(() => "");
+      if (saved.includes(id)) break;
+      await delay(50);
+    }
+  } finally {
+    await miniflare.dispose();
+  }
+  const saved = await readFile(receipt, "utf8");
+  const record = saved.trim().split("\n").map(JSON.parse).find((item) => item.requestId === id);
+  assert.equal(record?.status, 500);
+  assert.equal(record?.phases[0].stage, "kv-write");
+  assert.equal(record?.phases[0].result, "failed");
+  assert.doesNotMatch(saved, /synthetic-(?:url|cookie|customer-content|access)|000015|simulated private failure/);
+  console.log("Exited isolated runtime with retrievable log ID " + id);
+});

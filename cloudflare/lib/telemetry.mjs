@@ -33,7 +33,7 @@ export async function publishEvent(env, event) {
   }
   try {
     const delivery = await fetch(endpoint, {
-      method: "POST", redirect: "error", signal: AbortSignal.timeout(4000),
+      method: "POST", redirect: "manual", signal: AbortSignal.timeout(4000),
       headers: { "content-type": "application/json", authorization: "Bearer " + token },
       body: JSON.stringify(event),
     });

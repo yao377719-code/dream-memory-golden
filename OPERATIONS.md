@@ -14,7 +14,7 @@ Pages Functions 可通过 `DREAM_MEMORY_IMAGE_LIFECYCLE` 接入专属图片生�
 
 各 HTTP 路由返回 `X-Request-ID`。日志允许记录路由类、方法、状态、版本、总耗时和 KV、图片协调器及网易云请求各阶段耗时。错误和慢请求保留，普通成功请求按 5% 采样。配置受控 HTTPS 接收地址 `DREAM_MEMORY_LOG_ENDPOINT`，身份令牌作为 Secret `DREAM_MEMORY_LOG_TOKEN` 设置。检索时用请求 ID 匹配结构化记录。密码、Cookie、请求体、图片和带查询参数的 URL 不进入日志。没有接收端时只存在实时日志，Pages tail 不提供历史查询。接收失败的告警及接收端自身的保留策略由受控系统配置。
 
-本轮本机以模拟请求触发 KV 写入失败，关闭 HTTP 日志接收进程后仍从落盘记录按请求 ID 查回。真实接收端权限和云端故障回查仍待验证。
+本轮在本机 HTTP 接收端和隔离的 Workers 运行时验证。触发 KV 写入失败并关闭测试运行时后，仍能从落盘记录按请求 ID 查回。Cloudflare Fetch 使用手动处理重定向模式，接收端响应 3xx 时不转发令牌。真实接收端权限和云端故障回查仍待验证。
 
 ## Cloudflare 容量
 
