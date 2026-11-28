@@ -57,7 +57,7 @@ function isNavModuleVisible(module: string) {
 <html lang="zh-CN" style={shellStyle} data-customer-id={publicCustomerId} data-pages-project={publicProjectName} data-site-init="loading">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=980" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
     <meta name="dream-memory-customer-id" content={publicCustomerId} />
     <meta name="dream-memory-pages-project" content={publicProjectName} />
@@ -286,6 +286,7 @@ function isNavModuleVisible(module: string) {
         const target = slot || fallback;
         if (target && player.parentElement !== target) target.append(player);
         player.classList.toggle("is-floating", !slot);
+        if (fallback) fallback.hidden = Boolean(slot) || player.hidden;
       }
 
       function setupMusicPlayer() {
@@ -318,10 +319,12 @@ function isNavModuleVisible(module: string) {
           }
           const message = provider === "qq"
             ? "QQ 音乐链接已识别，但平台通常不开放直接播放地址；如果这首歌播不了，可以先换网易云歌曲链接。"
-            : "后台填网易云歌曲链接或音频直链后可以播放。";
+            : provider === "netease" && panel.dataset.musicUrl
+              ? "网易云音乐链接解析失败或暂不可播放，请检查链接或更换音频直链。"
+              : "后台填网易云歌曲链接或音频直链后可以播放。";
           if (empty) {
             empty.textContent = message;
-            empty.hidden = Boolean(source);
+            empty.hidden = Boolean(source) || !panel.dataset.musicUrl;
           }
         }
 
@@ -335,13 +338,21 @@ function isNavModuleVisible(module: string) {
 
         audio.volume = Number(volume.value);
         setSource(panel.dataset.musicSource || "", panel.dataset.musicProvider || "");
-        if (!panel.dataset.musicSource && panel.dataset.musicUrl) {
-          resolveMusicSource(panel.dataset.musicUrl).then(({ source, provider }) => {
+        let resolving;
+        let requestedSource;
+        function prepareSource(url) {
+          if (requestedSource === url && resolving) return resolving;
+          requestedSource = url;
+          resolving = resolveMusicSource(url).then(({ source, provider }) => {
+            if (requestedSource !== url) return "";
             panel.dataset.musicSource = source;
             panel.dataset.musicProvider = provider;
             setSource(source, provider);
-          });
+            return source;
+          }).finally(() => { if (requestedSource === url) resolving = undefined; });
+          return resolving;
         }
+        if (!panel.dataset.musicSource && panel.dataset.musicUrl) void prepareSource(panel.dataset.musicUrl);
         audio.addEventListener("loadedmetadata", syncTime);
         audio.addEventListener("timeupdate", syncTime);
         audio.addEventListener("ended", () => {
@@ -352,7 +363,7 @@ function isNavModuleVisible(module: string) {
           toggle.textContent = "▶";
           toggle.setAttribute("aria-label", "播放");
         });
-        audio.addEventListener("play", () => {
+        audio.addEventListener("playing", () => {
           toggle.textContent = "Ⅱ";
           toggle.setAttribute("aria-label", "暂停");
         });
@@ -365,15 +376,18 @@ function isNavModuleVisible(module: string) {
 
         toggle.addEventListener("click", async () => {
           if (!audio.getAttribute("src")) {
-            setSource(panel.dataset.musicSource || "", panel.dataset.musicProvider || "");
+            const url = panel.dataset.musicUrl;
+            if (url) await prepareSource(url);
           }
           if (!audio.getAttribute("src")) return;
           if (audio.paused) {
             try {
               await audio.play();
-            } catch {
+            } catch (error) {
               if (empty) {
-                empty.textContent = "浏览器暂时拦截了播放，可以再点一次播放，或换一条可播放的链接。";
+                empty.textContent = error?.name === "NotAllowedError"
+                  ? "浏览器暂时拦截了播放，请再点击一次。"
+                  : "这条音乐链接暂时不能直接播放，请检查音源或换一条音频直链。";
                 empty.hidden = false;
               }
             }
@@ -409,7 +423,7 @@ function isNavModuleVisible(module: string) {
           }
         });
 
-        window.__dreamMusicPlayer = { setSource };
+        window.__dreamMusicPlayer = { prepareSource };
         return window.__dreamMusicPlayer;
       }
 
@@ -455,7 +469,7 @@ function isNavModuleVisible(module: string) {
         const showMusic = data.profile.showMusic !== false;
         panel.hidden = !showMusic;
         const fallback = document.querySelector("[data-global-music-home]");
-        if (fallback) fallback.hidden = !showMusic;
+        if (fallback) fallback.hidden = Boolean(document.querySelector("[data-music-slot]")) || !showMusic;
         panel.querySelectorAll("[data-cloud-image]").forEach((node) => {
           const path = node.getAttribute("data-cloud-image");
           const value = path?.split(".").reduce((target, key) => target?.[key], data);
@@ -464,11 +478,7 @@ function isNavModuleVisible(module: string) {
         const provider = getMusicProvider(data.profile.musicUrl);
         panel.dataset.musicUrl = data.profile.musicUrl || "";
         panel.dataset.musicProvider = provider;
-        resolveMusicSource(data.profile.musicUrl).then(({ source, provider }) => {
-          panel.dataset.musicSource = source;
-          panel.dataset.musicProvider = provider;
-          window.__dreamMusicPlayer?.setSource(source, provider);
-        });
+        setupMusicPlayer()?.prepareSource(panel.dataset.musicUrl);
       }
 
       function setSiteInitState(state, message = "") {

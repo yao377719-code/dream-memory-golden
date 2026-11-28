@@ -85,7 +85,7 @@ const initialData = {
 ---
 
 <!doctype html>
-<html lang="zh-CN" data-admin-init="loading">
+<html lang="zh-CN" data-customer-id={customerId} data-pages-project={pagesProjectName} data-admin-init="loading">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -2069,6 +2069,8 @@ const initialData = {
         syncThemeControls();
       }
 
+      let cloudRevision = "";
+
       async function loadCloudData(password) {
         cloudLoadFailure = "";
         const controller = new AbortController();
@@ -2085,6 +2087,7 @@ const initialData = {
           if (!response.ok) throw new Error(`后台数据读取失败（${response.status}）`);
           const result = await response.json();
           if (!result.ok) throw new Error(result.message || "后台数据读取失败");
+          if (result.ok) cloudRevision = String(result.data?.updatedAt || "");
           if (result.ok && result.data) {
             state = mergeStateWithDefaults(result.data);
             localStorage.setItem(storageKey, JSON.stringify(state));
@@ -2115,6 +2118,7 @@ const initialData = {
             headers: {
               "content-type": "application/json",
               "x-admin-password": password,
+              "if-match": cloudRevision,
             },
             body: snapshot,
           });
@@ -2122,6 +2126,7 @@ const initialData = {
           if (!response.ok || !result.ok) {
             throw new Error(result.message || "保存失败");
           }
+          if (typeof result.revision === "string") cloudRevision = result.revision;
           rememberSavedTheme();
         };
         cloudSaveQueue = cloudSaveQueue.catch(() => {}).then(save);

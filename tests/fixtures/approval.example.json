@@ -1,0 +1,56 @@
+{
+  "tag": "v0.0.0-rc.0",
+  "commit": "0000000000000000000000000000000000000000",
+  "approved": false,
+  "acceptedAt": null,
+  "checks": {
+    "node": {
+      "passed": false,
+      "reference": ""
+    },
+    "astro": {
+      "passed": false,
+      "reference": ""
+    },
+    "blank": {
+      "passed": false,
+      "reference": ""
+    },
+    "artifact": {
+      "passed": false,
+      "reference": ""
+    },
+    "desktop": {
+      "passed": false,
+      "reference": ""
+    },
+    "mobile": {
+      "passed": false,
+      "reference": ""
+    },
+    "identity": {
+      "passed": false,
+      "reference": ""
+    },
+    "isolation": {
+      "passed": false,
+      "reference": ""
+    },
+    "saveReload": {
+      "passed": false,
+      "reference": ""
+    },
+    "albumBatchRetry": {
+      "passed": false,
+      "reference": ""
+    },
+    "audio": {
+      "passed": false,
+      "reference": ""
+    },
+    "badBuildBlocked": {
+      "passed": false,
+      "reference": ""
+    }
+  }
+}

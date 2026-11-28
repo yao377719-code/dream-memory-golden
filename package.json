@@ -14,14 +14,16 @@
     "customer:build": "node scripts/build-customer.mjs",
     "customer:plan": "node scripts/provision-customer.mjs",
     "customer:provision": "node scripts/provision-customer.mjs --execute",
-    "customer:batch": "node scripts/provision-batch.mjs",
+    "customer:batch": "node scripts/provision-batch.mjs --execute",
     "customer:mark-sold": "node scripts/mark-customer-sold.mjs",
     "customer:accept": "node scripts/accept-customer.mjs",
     "golden:accept": "node scripts/accept-golden-release.mjs",
     "audit:golden": "node scripts/audit-golden.mjs",
     "test": "node --test tests/*.test.mjs",
     "cf:dev": "wrangler pages dev dist",
-    "cf:deploy": "wrangler pages deploy dist"
+    "cf:deploy": "node scripts/provision-customer.mjs --execute",
+    "customer:delivery-view": "node scripts/delivery-view.mjs",
+    "golden:accept:local": "node scripts/accept-golden-local.mjs"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
@@ -30,7 +32,10 @@
     "typescript": "^5.8.3"
   },
   "devDependencies": {
+    "esbuild": "0.27.7",
+    "miniflare": "4.20260708.1",
     "playwright": "^1.63.0",
+    "smol-toml": "1.7.0",
     "wrangler": "^4.110.0"
   }
 }

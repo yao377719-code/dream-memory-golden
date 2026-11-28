@@ -41,6 +41,16 @@ if (dist) {
   if (!html.includes(customerId) || !html.includes(project)) throw new Error("frontend identity metadata does not match build config");
   const htmlFiles = [];
   await walk(distRoot, htmlFiles);
-  if (htmlFiles.filter((file) => file.endsWith("index.html")).length !== 3) throw new Error("blank build must contain exactly three pages");
+  const pages = htmlFiles.filter((file) => file.endsWith("index.html"));
+  if (pages.length !== 3) throw new Error("blank build must contain exactly three pages");
+  for (const page of pages) {
+    const markup = await readFile(page, "utf8");
+    const styles = [...markup.matchAll(/<link\b(?=[^>]*\brel="stylesheet")(?=[^>]*\bhref="\/_astro\/([a-zA-Z0-9_.-]+\.css)")[^>]*>/g)];
+    if (styles.length === 0) throw new Error("Missing bundled CSS in " + path.relative(distRoot, page));
+    for (const [, file] of styles) {
+      const stylesheet = await readFile(path.join(distRoot, "_astro", file), "utf8");
+      if (stylesheet.trim().length < 100) throw new Error("Empty bundled CSS in " + path.relative(distRoot, page));
+    }
+  }
 }
 console.log("Golden source and artifact audit passed");
