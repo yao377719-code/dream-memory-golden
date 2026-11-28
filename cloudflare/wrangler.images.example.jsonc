@@ -1,0 +1,18 @@
+{
+  "name": "dream-memory-image-lifecycle-test",
+  "main": "image-lifecycle-worker.mjs",
+  "compatibility_date": "2026-07-10",
+  "vars": {
+    "CUSTOMER_ID": "customer-test-a1b2c3",
+    "PAGES_PROJECT_NAME": "dream-memory-test-a1b2c3"
+  },
+  "kv_namespaces": [
+    { "binding": "DREAM_MEMORY_STORE", "id": "00000000000000000000000000000000" }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "IMAGE_LIFECYCLE", "class_name": "ImageLifecycle" }]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ImageLifecycle"] }
+  ]
+}

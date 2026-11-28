@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parse } from "smol-toml";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { loadCustomerConfig } from "./lib/customer-config.mjs";
@@ -17,8 +18,12 @@ try {
   });
   if (result.status !== 0) throw new Error(result.stderr || "unable to download Pages configuration");
   const toml = await readFile(path.join(temporary, "wrangler.toml"), "utf8");
-  for (const expected of [identity.projectName, identity.customerId, identity.kvId, "DREAM_MEMORY_STORE", "PAGES_PROJECT_NAME"]) {
-    if (!toml.includes(expected)) throw new Error(`remote Pages config is missing expected value: ${expected}`);
+  const config = parse(toml);
+  const selected = config.env?.production ?? config;
+  const store = selected.kv_namespaces?.filter((entry) => entry.binding === "DREAM_MEMORY_STORE");
+  if (config.name !== identity.projectName || selected.vars?.CUSTOMER_ID !== identity.customerId ||
+      selected.vars?.PAGES_PROJECT_NAME !== identity.projectName || store?.length !== 1 || store[0].id !== identity.kvId) {
+    throw new Error("remote Pages production configuration has an identity or KV binding mismatch");
   }
   console.log("Remote Pages project, CUSTOMER_ID, and KV binding match the local instance config");
 } finally {

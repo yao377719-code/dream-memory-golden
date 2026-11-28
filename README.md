@@ -1,109 +1,57 @@
-# Dream Memory 59 元基础版黄金空白母版
+# 梦女个人网站国内版黄金模板
 
-这是独立的 Cloudflare Pages + Pages Functions + KV 空白客户框架。源码不含原站、demo、TT、TT-2 或任何客户的人物、故事、图片、音乐、纪念日和语录数据。
+这是 59 元基础版的空白 Cloudflare Pages、Functions 与 KV 模板。新站使用独立身份、固定网址、后台密码和 KV。空站保留日常、合照、谷子、稿件四个可编辑入口。来源见 [BASELINE.md](BASELINE.md) 和 [PROVENANCE.md](PROVENANCE.md)，历史故障和验证入口见 [故障记录](INCIDENTS.md)。
 
-## 安全边界
+## 选版与批准
 
-- 客户构建必须显式使用 `PUBLIC_CUSTOMER_MODE=blank`，且必须配置 `CUSTOMER_ID`、Pages 项目名、固定网址和唯一 KV。
-- `demo` 只能在同时设置 `PUBLIC_CUSTOMER_MODE=demo` 与 `ALLOW_DEMO_BUILD=true` 时构建；仓库不提供 demo 内容。
-- 缺少或错配 ID、Pages 项目名、KV 绑定、固定网址时，构建或运行时立即失败，不回退到 demo。
-- 后台密码为每站独立的六位数字，只从进程环境送入 Cloudflare Secret；脚本不把密码写入仓库或配置。批量流程将私密交付记录追加到仓库外的站主目录。
-- 不提供删除、清空、迁移或初始化既有 KV 的脚本。
-- 新 blank 站预置四个**可编辑空分类**：日常、合照、谷子、稿件。分类中不预置图片或客户内容；前台使用 bfab755 的紧凑入口卡与点击展开照片网格结构，分类可在后台改名、新增、删除和排序。
+GitHub 的 `v1.0.0-rc.6` 指向 `9ef573f`，用于追溯现有站。标签是否可用以该标签和完整 commit 对应的验收记录为准。版本默认选择已批准的正式标签 `vX.Y.Z`，指定候选标签 `vX.Y.Z-rc.N` 时，站主需要明确批准该候选。批准记录存放在私密目录，由站主传入。仓库提供 [示例](tests/fixtures/approval.example.json)，其中的值仅演示结构。脚本比对 GitHub 标签的实际 commit，并校验批准记录中的验收项。单站和批量均从该标签的新 clone 构建。
 
-## 首次渲染与故障状态
+需要把站点、构建和检查结果对上实际部署 commit。GitHub `main` 前进后，仍可使用经过审批的旧标签。固定标签一经使用应保留原指向。验收报告需覆盖 Node、Astro check、空白构建、构建产物、桌面、手机、身份、双站隔离、保存刷新、相册部分失败重试、实际音频播放和坏产物拦截。
 
-- 新客户站启动时必须先显示中性的“正在加载”状态。只有当前客户的 KV 数据与主题完成初始化后，才能显示前台、后台登录页或后台内容；禁止先绘制默认暖金色空白站再替换为客户主题。
-- 该门禁必须覆盖冷启动、刷新、前台进入后台、后台返回前台以及桌面端和手机端。
-- 数据请求超时或失败时必须显示明确的错误提示和可操作的重试入口，不能永久隐藏页面，也不能以默认站内容冒充加载结果。
-- blank 客户站不得携带自动验收数据、测试图片或任何其他客户数据。自动验收使用的纯虚构数据只能写入独立测试站的 KV，不能进入模板源码、新客户默认数据或待售库存站。
-
-## 本地安装与测试
+## 本地与隔离验收
 
 ```powershell
 npm ci
 npm test
 npm run audit:golden
-```
-
-直接执行 `npm run build` 而不设置身份变量会按设计失败。使用示例配置验证空白生产构建：
-
-```powershell
-npm run customer:verify -- --config tests/fixtures/wrangler.blank.json
 npm run customer:build -- --config tests/fixtures/wrangler.blank.json
-```
-
-发布候选版必须在两个相互独立、只用于测试的站点上运行黄金验收基线。所有地址、密码和实例配置只通过环境变量传入，不得写入仓库：
-
-```powershell
-$env:GOLDEN_TEST_URL = "https://<独立验收站>.pages.dev"
-$env:GOLDEN_ADMIN_PASSWORD = "<六位测试密码>"
-$env:GOLDEN_ISOLATION_URL = "https://<独立隔离对照站>.pages.dev"
-$env:GOLDEN_ACCEPTANCE_OUTPUT = "<仓库之外的截图目录>"
-npm run golden:accept
-```
-
-该验收会写入纯虚构数据，覆盖人物资料、故事、语录、纪念日与日历、音乐、主题、相册分类管理、单张及批量上传，并检查刷新、退出重登、错误密码、跨站隔离、桌面/手机截图、API 失败重试和首次渲染门禁。只能对专用测试实例执行，不能对待售库存或客户站执行。
-
-测试 fixture 使用不可部署的全零 KV ID，仅用于本地结构和构建验证；正式开站脚本会写入 Cloudflare 返回的真实唯一 ID。
-
-## 新客户完整流程
-
-新 Agent 必须从指定的正式候选标签或正式标签执行 fresh clone 后建站，不得从本地旧目录、TT、TT-2、Demo、原站或任何客户实例复制源码、配置或内容。
-
-Astro 只负责生成静态页面；`/functions/api/*` 必须由 Cloudflare Pages Functions 提供。客户站必须执行仓库内完整的 Wrangler 建站、Secret、构建、Functions 部署和远端验收流程，不能只把 `dist` 当作普通静态网站上传。
-
-先生成随机身份，并检查计划；计划模式不会创建任何资源：
-
-```powershell
-npm run customer:names -- --count 1 --suffix-length 6
-npm run customer:plan -- --slug luna-a1b2c3
-```
-
-单站正式执行前确保工作树干净，通过不回显的输入把六位数字密码放入本进程环境：
-
-```powershell
-$env:ADMIN_PASSWORD = Read-Host "输入客户后台密码" -MaskInput
-npm run customer:provision -- --slug luna-a1b2c3
-Remove-Item Env:ADMIN_PASSWORD
-```
-
-`customer:provision` 只在明确的 `--execute` 模式下执行以下顺序：
-
-1. 检查 Git 工作树和 Pages/KV 名称冲突。
-2. 创建唯一 KV namespace。
-3. 创建唯一 Pages 项目，生产分支名等于 `CUSTOMER_ID`。
-4. 在该客户专用 fresh clone 根目录生成被 Git 忽略的 `wrangler.jsonc` 单一身份配置；Pages、Functions 和构建都从它取值。
-5. 把 `ADMIN_PASSWORD` 通过标准输入写入 Pages Secret。
-6. 以 blank 模式构建并执行源码、产物和身份审计。
-7. Wrangler 手动部署，不启用 Git Push 自动部署。
-8. 下载 Pages 远端配置，只核对项目名、`CUSTOMER_ID` 和 KV binding。
-9. 验收固定前台、后台、公开 API、正确/错误密码、前后端 ID、空 KV，以及首次打开即展示四张紧凑的空相册入口卡。
-10. 站主交付闭环：通过私密清单或安全的一次性渠道把后台密码交给站主，不在 Git、配置、公开 Markdown、截图或公开聊天中记录；完成一次真实后台登录，并验证刷新、退出重登。仅验证 Secret 已写入不算交付完成。
-11. 正式交付前逐项确认前端 `CUSTOMER_ID`、Functions `CUSTOMER_ID`、Pages 项目名、固定 hostname、KV namespace/binding 和远程生产部署配置完全对应；任何一项不一致都不得交付。
-12. 在站主与执行 Agent 的私密交付回复中直接列出：前台链接、后台链接、六位后台密码、`CUSTOMER_ID`、Pages 项目名、KV namespace 和部署 commit。密码必须能够直接选择复制，不能只写“已复制到剪贴板”；不得把整份凭据清单发布到公开报告、公开截图或公开频道。
-
-密码、GitHub Token、Cloudflare Token 及其他 Secret 只能通过对应平台的安全输入或 Secret 机制传递，禁止写入源码、Git、README、命令日志或可公开传播的交付报告。交付回复中按上一条向站主直接显示的六位后台密码，不得同时落盘到仓库或构建产物。
-
-任何步骤失败都会停止；脚本不会回滚时删除已创建资源，防止误删。应检查已完成步骤后再决定如何继续，不能盲目重跑。
-
-## 批量私密交付清单
-
-此流程只用于已验收的标签；先在本机安装 Playwright Chromium（浏览器存在性在创建任何云资源之前检查）：
-
-```powershell
 npx playwright install chromium
-npm run customer:batch -- --count 5 --template-version v1.0.0-rc.3
+npm run golden:accept:local
 ```
 
-批量脚本检查干净的 `main`、GitHub 远端 commit 与指定标签完全一致，然后为每站创建仓库外的 fresh clone，生成独立随机项目名、CUSTOMER_ID、KV 和六位密码。每站完成 Secret 写入、blank 构建、手动部署、API/KV 验收及真实浏览器后台登录（含刷新、退出重登）后，才标记为“待售”。若浏览器登录失败，凭据仍追加保存为“待验收”，绝不错误标记待售。
+运行 `npm run check` 时，从同一测试身份设置 `PUBLIC_CUSTOMER_MODE=blank`、`PUBLIC_CUSTOMER_ID`、`PUBLIC_PAGES_PROJECT_NAME` 和 `PUBLIC_SITE_URL`。在一个副本中顺序运行构建和 Astro check。Windows 已安装 Edge 时可用 `GOLDEN_BROWSER_CHANNEL=msedge`。本地验收创建两个不同身份的 Wrangler Pages 测试目录、独立持久化 KV 和合成内容。结果及截图写到 `.customer/local-accept-*`。
 
-默认私密目录为当前 Windows 用户的 `%LOCALAPPDATA%\Dream-Memory-Golden-Delivery`，其中 `delivery-ledger.jsonl` 是**追加式**清单，不覆盖旧记录；每次完成都会在该私密目录生成并自动打开本机完成页面，展示客户编号、前后台固定链接、密码、CUSTOMER_ID、Pages 项目、模板版本和待售/已售状态。可用 `--delivery-dir` 指定另一个仓库外私密目录。不要把该目录放入云同步、Git、截图或分享链接；逐个向对应客户交付密码，不转发整份清单。已有客户售出状态只能追加变更记录，不能回退为待售。
+运行 `npm run golden:accept` 做独立云测试时，分别传入 `GOLDEN_TEST_URL`、`GOLDEN_TEST_CUSTOMER_ID`、`GOLDEN_ADMIN_PASSWORD`、`GOLDEN_ISOLATION_URL`、`GOLDEN_ISOLATION_CUSTOMER_ID` 和 `GOLDEN_ACCEPTANCE_OUTPUT`。只用专门验收的项目和全新测试 KV。验收会检查双方的身份与初始空数据，在主验收站保存合成数据。验收和批准由不同命令完成，完成本地验收后仍要核对批准记录。
 
-售出后执行 `npm run customer:mark-sold -- --project dream-memory-<随机名>`，只追加一条“已售”状态，不改动密码、Pages 或 KV。
+## 开通、复验与续跑
 
-## 已纳入的基础版
+先预览计划。正式执行前将 `$tag` 设为批准标签，`$approval` 设为该标签的私密批准记录路径。私密台账目录可用 `--delivery-dir` 指定，默认是当前 Windows 用户下的 `%LOCALAPPDATA%\Dream-Memory-Golden-Delivery`。
 
-首页资料、关于我们、故事时间线、音乐、语录、纪念日、日历、相册分类及图片、16 套主题、自定义主题色、预设布局、模块开关、所有模块标题编辑、图片焦点实时预览、原图优先上传，以及相册批量上传/进度/失败隔离/排序/旧草稿兼容。
+```powershell
+npm run customer:plan -- --slug luna-a1b2c3
+$env:ADMIN_PASSWORD = Read-Host "输入独立的六位后台密码" -MaskInput
+try {
+  npm run customer:provision -- --slug luna-a1b2c3 --template-version $tag --approval $approval
+} finally {
+  Remove-Item Env:ADMIN_PASSWORD
+}
+npm run customer:batch -- --count 5 --template-version $tag --approval $approval
+```
 
-明确不含 demo 访问统计、旧 Netlify/Decap、私密日记、多曲歌单、小人入口及其他定制功能。
+脚本从已确认的项目工作区创建干净副本，核对名称、预记资源创建、创建 Pages 和 KV、通过标准输入写 Secret，随后构建。部署前直接用当前构建产物启动本地 Pages 和 Functions，核对前后台身份、空数据、CSS、关键图片尺寸及手机和桌面布局。产物通过后才会调用 Wrangler。批量按站执行，首站完成固定域名复验后才进入下一站。生产口令只用于目标 Pages Secret 和交付验收，隔离预检使用合成口令。
+
+`cf:deploy` 指向同一个开站入口。直接执行 Wrangler 或启用 Git 自动部署会绕过仓库门槛，发布账户仅在批准入口执行部署。新站正式域名通过远端配置、KV、HTTP 和真实浏览器登录、刷新、退出重登后，台账才标记待售。
+
+中途失败时，先从私密视图查站点编号、项目和故障阶段，按同一标签、批准记录和 Pages 项目继续。批量和单站均可使用 `--resume dream-memory-<原项目名>`。单次恢复处理一个既有记录；批量恢复使用 `customer:batch -- --resume …`。资源创建前有意图记录，恢复时核对同名项目和 KV。同一条记录已经完成的阶段跳过。进程异常退出遗留锁时，先确认持锁 PID 已退出，并备份私密台账后再处理锁文件。开站流程不删除云资源。
+
+## 私密交付
+
+`npm run customer:delivery-view` 输出本机 HTML 文件位置。按站点编号、固定 URL、Pages 项目、状态或版本搜查，可分别复制前后台固定链接。旧批量 JSONL 保持可读，未记录的字段显示待核。新口令单独保存在私密目录的 `credentials` 下，每站一份。旧台账历史口令由站主单独保管。台账和视图应在受 Windows 用户权限保护且未开启同步的目录使用。口令只在站主批准后逐站交付，经原私密交付渠道查找；客户可回看原交付消息。
+
+`npm run customer:mark-sold -- --project <Pages项目>` 追加已售状态。已向客户送达时使用 `--delivered` 记录交付时间。验收时间与交付时间分别记录。
+
+## 失败处理与回滚
+
+开站失败留在待验收。现有站正式发布前记录健康 deployment ID、固定域名、部署 commit 和绑定，并保留通过验收的完整产物。复验失败先停止后续发布，按审批回滚到已记录的健康 deployment ID，再复验固定域名、前后台身份、绑定、样式与读取。涉及图片回收的回滚还要确保单写者约束，部署回滚无法复原已经实删的对象。
+
+图片生命周期绑定、日志接收端、容量和本地备份见 [运行与交付说明](OPERATIONS.md)。

@@ -73,3 +73,10 @@ const musicSongId = getMusicId(profile.musicUrl);
   </p>
   <audio data-music-audio preload="metadata" src={musicAudioSource}></audio>
 </section>
+
+<style>
+  .music-empty:not([hidden]) {
+    display: block !important;
+    overflow-wrap: anywhere;
+  }
+</style>

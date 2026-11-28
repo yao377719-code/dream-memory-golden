@@ -14,7 +14,7 @@ const fallbackQuote = {
 const quoteData = quotes.length > 0 ? quotes : [fallbackQuote];
 ---
 
-<section class="quote-panel side-panel" data-random-quote>
+<section class="quote-panel side-panel" data-random-quote data-static-quotes={String(!isBlankCustomerMode)}>
   <div>
     <p class="eyebrow" data-cloud-text={editableTitlePaths.quote}>{modules.quoteTitle}</p>
     <blockquote data-quote-content>{quoteData[0].content}</blockquote>
@@ -31,14 +31,15 @@ const quoteData = quotes.length > 0 ? quotes : [fallbackQuote];
     mood: string;
   };
 
+  const panel = document.querySelector<HTMLElement>('[data-random-quote][data-static-quotes="true"]');
   const dataNode = document.querySelector("#quote-data");
   const quotes = (dataNode?.textContent ? JSON.parse(dataNode.textContent) : []) as Quote[];
-  const contentNode = document.querySelector<HTMLElement>("[data-quote-content]");
-  const moodNode = document.querySelector<HTMLElement>("[data-quote-mood]");
-  const refreshNode = document.querySelector("[data-quote-refresh]");
+  const contentNode = panel?.querySelector<HTMLElement>("[data-quote-content]");
+  const moodNode = panel?.querySelector<HTMLElement>("[data-quote-mood]");
+  const refreshNode = panel?.querySelector("[data-quote-refresh]");
 
   function renderQuote() {
-    if (quotes.length === 0 || !contentNode || !moodNode) return;
+    if (panel?.hasAttribute("data-cloud-quote-bound") || quotes.length === 0 || !contentNode || !moodNode) return;
     const quote = quotes[Math.floor(Math.random() * quotes.length)];
     contentNode.textContent = quote.content;
     moodNode.textContent = quote.mood || "语录";

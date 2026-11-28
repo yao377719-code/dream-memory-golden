@@ -1,61 +1,78 @@
-import { writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
-import path from "node:path";
-import process from "node:process";
 import { generateCustomerIdentities } from "./generate-customer-identities.mjs";
 import { createCustomerConfig, validateCustomerConfig } from "./lib/customer-config.mjs";
+import {
+  appendDeliveryRecord, createPrivateCompletionPage, privateDeliveryDirectory, readCredential, readDeliveryRecords, saveCredential,
+} from "./lib/delivery-ledger.mjs";
+import { cloudDriver, provisionSite, startSite, withLedgerLock } from "./lib/site-provisioning.mjs";
+import { selectTemplate } from "./lib/template-release.mjs";
+import { verifyBrowserAvailable } from "./lib/browser-acceptance.mjs";
 
-const has = (name) => process.argv.includes(name);
-const option = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : ""; };
-const execute = has("--execute");
-const requestedSlug = option("--slug");
-const generated = generateCustomerIdentities({ count: 1, suffixLength: 6 })[0];
-const projectName = requestedSlug ? `dream-memory-${requestedSlug}` : generated.projectName;
-const customerId = requestedSlug ? `customer-${requestedSlug}` : generated.customerId;
-validateCustomerConfig(createCustomerConfig({ projectName, customerId, kvId: "0".repeat(32) }));
-const root = process.cwd();
-const wranglerCli = path.join(root, "node_modules", "wrangler", "bin", "wrangler.js");
-const npmCli = process.env.npm_execpath;
-if (!npmCli) throw new Error("npm_execpath is required to run the golden provisioning workflow");
-
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { cwd: options.cwd || root, encoding: "utf8", stdio: "pipe", input: options.input });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout || `${command} failed`);
-  return result.stdout;
-}
-
-const plan = [
-  `verify no Pages/KV collision for ${projectName}`,
-  `create KV namespace ${projectName}`,
-  `create Pages project ${projectName} with production branch ${customerId}`,
-  "set ADMIN_PASSWORD from the process environment as a Pages Secret",
-  "generate and validate one local wrangler.jsonc as the identity source of truth",
-  "build blank output, audit it, deploy it, verify remote config, and run live acceptance",
-];
-if (!execute) {
-  console.log(JSON.stringify({ mode: "plan-only", projectName, customerId, actions: plan }, null, 2));
+const suppliedPassword = process.env.ADMIN_PASSWORD;
+delete process.env.ADMIN_PASSWORD;
+const args = process.argv.slice(2);
+const option = (name) => args.includes(name) ? args[args.indexOf(name) + 1] || "" : "";
+const cwd = process.cwd();
+const batch = args.includes("--batch");
+const resume = option("--resume");
+const slug = option("--slug");
+const count = batch ? Number(option("--count") || "1") : 1;
+if (!Number.isInteger(count) || count < 1 || count > 100) throw new Error("--count must be 1 to 100");
+if (batch && slug) throw new Error("Batch mode generates project names automatically");
+if (resume && (slug || args.includes("--count"))) throw new Error("Resume accepts one exact recorded Pages project");
+const singleton = slug && {
+  projectName: "dream-memory-" + slug,
+  customerId: "customer-" + slug,
+  siteUrl: "https://dream-memory-" + slug + ".pages.dev",
+};
+if (singleton) validateCustomerConfig(createCustomerConfig({ ...singleton, kvId: "0".repeat(32) }));
+if (!args.includes("--execute")) {
+  console.log(JSON.stringify({ mode: "plan-only", count, resume, projectName: singleton?.projectName,
+    steps: ["approve exact template release", "verify browser", "reserve in private ledger", "provision isolated identity",
+      "build and verify artifact locally", "deploy", "accept fixed domain", "mark ready for sale"] }, null, 2));
   process.exit(0);
 }
-if (!/^\d{6}$/.test(process.env.ADMIN_PASSWORD || "")) throw new Error("ADMIN_PASSWORD must be a unique six-digit code supplied through the environment");
-if (run("git", ["status", "--porcelain"]).trim()) throw new Error("Refusing to provision from a dirty Git worktree");
-const wrangler = [wranglerCli];
-const projectList = JSON.parse(run(process.execPath, [...wrangler, "pages", "project", "list", "--json"]));
-if (projectList.some((item) => item["Project Name"] === projectName)) throw new Error("Pages project name already exists");
-const namespaceList = JSON.parse(run(process.execPath, [...wrangler, "kv", "namespace", "list"]));
-if (namespaceList.some((item) => item.title === projectName)) throw new Error("KV namespace name already exists");
-const kvOutput = run(process.execPath, [...wrangler, "kv", "namespace", "create", projectName]);
-const kvId = kvOutput.match(/"id"\s*:\s*"([0-9a-f]{32})"/)?.[1];
-if (!kvId) throw new Error("KV was created but its namespace ID could not be parsed; stop and inspect before retrying");
-run(process.execPath, [...wrangler, "pages", "project", "create", projectName, "--production-branch", customerId]);
-const config = createCustomerConfig({ projectName, customerId, kvId });
-validateCustomerConfig(config);
-const configPath = path.join(root, "wrangler.jsonc");
-await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { flag: "wx" });
-run(process.execPath, [wranglerCli, "pages", "secret", "put", "ADMIN_PASSWORD", "--project-name", projectName], { input: `${process.env.ADMIN_PASSWORD}\n` });
-run(process.execPath, [npmCli, "run", "customer:build", "--", "--config", configPath]);
-const commit = run("git", ["rev-parse", "HEAD"]).trim();
-run(process.execPath, [...wrangler, "pages", "deploy", path.join(root, "dist"), "--project-name", projectName, "--branch", customerId, "--commit-hash", commit, "--commit-message", "Provision blank customer from golden template"]);
-run(process.execPath, ["scripts/verify-remote-config.mjs", "--config", configPath]);
-run(process.execPath, ["scripts/accept-customer.mjs", "--config", configPath]);
-console.log(JSON.stringify({ projectName, customerId, kvId, siteUrl: `https://${projectName}.pages.dev`, adminUrl: `https://${projectName}.pages.dev/admin/` }, null, 2));
+
+const template = await selectTemplate({ cwd, tag: option("--template-version"), approval: option("--approval") });
+const directory = privateDeliveryDirectory(cwd, option("--delivery-dir"));
+if (!process.env.npm_execpath) throw new Error("Run through the npm provisioning entry point");
+await verifyBrowserAvailable();
+await withLedgerLock(directory, async () => {
+  const existing = await readDeliveryRecords(directory);
+  let record = resume ? existing.find((row) => row.projectName === resume) : undefined;
+  if (resume && (!record || record.status !== "待验收" || record.templateCommit !== template.commit || record.templateVersion !== template.tag)) {
+    throw new Error("Resume requires a pending record for the same approved release");
+  }
+  const identities = resume ? [record] : singleton ? [singleton] : generateCustomerIdentities({
+    count, reservedNames: existing.flatMap((item) => [item.projectName, item.customerId]),
+  });
+  for (const identity of identities) {
+    let password;
+    if (resume) {
+      password = await readCredential(directory, record.projectName);
+      if (!password && !record.activeStep && !record.completed?.length && !batch && suppliedPassword) {
+        password = suppliedPassword;
+        await saveCredential(directory, record.projectName, password);
+      }
+      if (!password && !record.activeStep && !record.completed?.length && batch) {
+        const { randomInt } = await import("node:crypto");
+        password = String(randomInt(0, 1000000)).padStart(6, "0");
+        await saveCredential(directory, record.projectName, password);
+      }
+      if (!password) throw new Error("Saved credential unavailable; review the pending record locally");
+    } else {
+      if (!batch && !/^\d{6}$/.test(suppliedPassword || "")) throw new Error("Supply ADMIN_PASSWORD securely");
+      ({ record, password } = await startSite(directory, identity, template, batch ? "" : suppliedPassword));
+    }
+    let steps;
+    try {
+      steps = await cloudDriver({ repositoryRoot: cwd, template, npmCli: process.env.npm_execpath, projectName: identity.projectName });
+    } catch (error) {
+      await appendDeliveryRecord(directory, { ...record, failure: "checkout-and-dependencies", updatedAt: new Date().toISOString() });
+      throw new Error(record.customerNumber + " stopped preparing the clean checkout", { cause: error });
+    }
+    const result = await provisionSite({ directory, record, password, steps });
+    console.log(result.customerNumber + " verified and recorded");
+  }
+  const page = await createPrivateCompletionPage(directory, await readDeliveryRecords(directory));
+  console.log("Private view: " + page);
+});

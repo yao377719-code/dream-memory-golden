@@ -43,4 +43,4 @@ function assertFrameworkOnlyAssets() {
   };
 }
 
-export default defineConfig({ site: parsedSite.origin, integrations: [assertFrameworkOnlyAssets()] });
+export default defineConfig({ site: parsedSite.origin, build: { inlineStylesheets: "never" }, integrations: [assertFrameworkOnlyAssets()] });

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { chromium, request as playwrightRequest } from "playwright";
+import { assertBrowserLayout, assertDecodedImages } from "./lib/browser-acceptance.mjs";
 
 const siteUrl = String(process.env.GOLDEN_TEST_URL || "").replace(/\/$/, "");
 const password = String(process.env.GOLDEN_ADMIN_PASSWORD || "");
@@ -15,9 +16,36 @@ if (!/^\d{6}$/.test(password)) throw new Error("GOLDEN_ADMIN_PASSWORD must be a 
 if (!isolationUrl || !/^https?:\/\//.test(isolationUrl)) throw new Error("GOLDEN_ISOLATION_URL is required");
 if (new URL(siteUrl).host === new URL(isolationUrl).host) throw new Error("GOLDEN_ISOLATION_URL must use a different test instance");
 
+const expectedId = process.env.GOLDEN_TEST_CUSTOMER_ID;
+const expectedIsolationId = process.env.GOLDEN_ISOLATION_CUSTOMER_ID;
+if (!expectedId || !expectedIsolationId || expectedId === expectedIsolationId) throw new Error("Supply both independent test CUSTOMER_IDs");
+for (const [url, identity] of [[siteUrl, expectedId], [isolationUrl, expectedIsolationId]]) {
+  const response = await fetch(url + "/api/site-data", { signal: AbortSignal.timeout(15000) });
+  const snapshot = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(snapshot.customerId, identity, "test target identity mismatch");
+  assert.equal(snapshot.data, null, "golden acceptance requires a fresh blank test namespace");
+}
 await mkdir(outputDir, { recursive: true });
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFElEQVR42mP8z8DAwMDAxMDAwMAAAAwAAf8B9pUAAAAASUVORK5CYII=", "base64");
+const audioFixtureUrl = "https://golden-synthetic.invalid/acceptance.wav";
+const audioSampleRate = 8000;
+const audioSamples = audioSampleRate * 5;
+const audioFixture = Buffer.alloc(44 + audioSamples * 2);
+audioFixture.write("RIFF", 0);
+audioFixture.writeUInt32LE(audioFixture.length - 8, 4);
+audioFixture.write("WAVEfmt ", 8);
+audioFixture.writeUInt32LE(16, 16);
+audioFixture.writeUInt16LE(1, 20);
+audioFixture.writeUInt16LE(1, 22);
+audioFixture.writeUInt32LE(audioSampleRate, 24);
+audioFixture.writeUInt32LE(audioSampleRate * 2, 28);
+audioFixture.writeUInt16LE(2, 32);
+audioFixture.writeUInt16LE(16, 34);
+audioFixture.write("data", 36);
+audioFixture.writeUInt32LE(audioSamples * 2, 40);
+
 const marker = `GOLDEN-RC-${Date.now()}`;
 const values = {
   nickname: `星海测试站 ${marker}`,
@@ -123,7 +151,7 @@ async function assertNoPrematureVisibleFrame(page, type) {
   }
 }
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, channel: process.env.GOLDEN_BROWSER_CHANNEL || undefined });
 try {
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const admin = await desktop.newPage();
@@ -157,7 +185,7 @@ try {
   await admin.locator('[name="profile.musicModuleTitle"]').fill(`虚构音乐 ${marker}`);
   await admin.locator('[name="profile.musicTitle"]').fill("虚构歌曲");
   await admin.locator('[name="profile.musicArtist"]').fill("虚构歌手");
-  await admin.locator('[name="profile.musicUrl"]').fill("");
+  await admin.locator('[name="profile.musicUrl"]').fill(audioFixtureUrl);
   results.music = true;
 
   await openTab(admin, "stories");
@@ -205,15 +233,27 @@ try {
 
   await openTab(admin, "gallery");
   await admin.locator("[data-batch-category]").selectOption({ index: 0 });
+  const failSecondImage = (route) => {
+    if (route.request().postDataJSON()?.fileName === "fictional-gallery-b.png") {
+      return route.fulfill({ json: { ok: false, message: "synthetic temporary failure" } });
+    }
+    return route.continue();
+  };
+  await admin.route("**/api/admin-image", failSecondImage);
   await admin.locator("[data-batch-input]").setInputFiles([
     { name: "fictional-gallery-a.png", mimeType: "image/png", buffer: png },
     { name: "fictional-gallery-b.png", mimeType: "image/png", buffer: png },
   ]);
-  await admin.waitForFunction(() => document.querySelector("[data-batch-upload-status]")?.textContent.includes("已上传并保存 2 张图片"), null, { timeout: 60000 });
+  await admin.waitForFunction(() => document.querySelector("[data-batch-upload-status]")?.textContent.includes("1 张成功，1 张失败"), null, { timeout: 60000 });
+  await admin.unroute("**/api/admin-image", failSecondImage);
+  await admin.locator("[data-batch-input]").setInputFiles({ name: "fictional-gallery-b.png", mimeType: "image/png", buffer: png });
+  await admin.waitForFunction(() => document.querySelector("[data-batch-upload-status]")?.textContent.includes("已上传并保存 1 张图片"), null, { timeout: 60000 });
+  results.albumPartialFailureAndRetry = true;
   results.batchUpload = true;
   await save(admin);
   results.fictionalData = true;
 
+  await assertBrowserLayout(admin, { front: false, label: "desktop admin" });
   await admin.screenshot({ path: path.join(outputDir, "desktop-admin.png"), fullPage: true });
   await admin.reload({ waitUntil: "networkidle" });
   await admin.locator("[data-admin]").waitFor({ state: "visible" });
@@ -221,6 +261,7 @@ try {
   results.refresh = true;
 
   const front = await desktop.newPage();
+  await front.route(audioFixtureUrl, (route) => route.fulfill({ status: 200, contentType: "audio/wav", body: audioFixture }));
   watchErrors(front, "desktop-front");
   await front.goto(`${siteUrl}/`, { waitUntil: "networkidle" });
   await front.waitForFunction(() => document.documentElement.dataset.siteInit === "ready");
@@ -229,6 +270,23 @@ try {
     assert.ok(frontText.includes(value), value);
   }
   assert.equal(await front.locator('[data-gallery-module="home-gallery"] .goods-card').count(), 2);
+  await assertBrowserLayout(front, { front: true, label: "desktop front" });
+  await assertDecodedImages(front, '[data-gallery-module="home-gallery"] .category-entry-card img');
+  await front.locator("[data-music-toggle]").click();
+  await front.waitForFunction(() => document.querySelector("[data-music-audio]").currentTime > 0.35);
+  assert.equal(await front.locator("[data-music-toggle]").getAttribute("aria-label"), "暂停");
+  const failedMusic = await desktop.newPage();
+  await failedMusic.route("**/api/site-data", async (route) => {
+    const response = await route.fetch();
+    const content = await response.json();
+    content.data.profile.musicUrl = "https://163cn.tv/example-synthetic";
+    await route.fulfill({ response, json: content });
+  });
+  await failedMusic.route("**/api/music-resolve?*", (route) => route.fulfill({ status: 502, json: { ok: false } }));
+  await failedMusic.goto(siteUrl + "/");
+  await failedMusic.locator("[data-music-empty]").filter({ hasText: "网易云音乐链接解析失败" }).waitFor({ state: "visible" });
+  await failedMusic.close();
+  results.audioProgressAndResolveFailure = true;
   await front.screenshot({ path: path.join(outputDir, "desktop-front.png"), fullPage: true });
   results.desktopScreenshots = true;
 
@@ -326,18 +384,22 @@ try {
   await adminFailure.close();
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+  await mobile.route(audioFixtureUrl, (route) => route.fulfill({ status: 200, contentType: "audio/wav", body: audioFixture }));
   const mobileFront = await mobile.newPage();
   watchErrors(mobileFront, "mobile-front");
   await installFrameProbe(mobileFront);
   await mobileFront.goto(`${siteUrl}/`, { waitUntil: "networkidle" });
   await mobileFront.waitForFunction(() => document.documentElement.dataset.siteInit === "ready");
   await assertNoPrematureVisibleFrame(mobileFront, "site");
+  await assertBrowserLayout(mobileFront, { front: true, label: "mobile front" });
+  await assertDecodedImages(mobileFront, '[data-gallery-module="home-gallery"] .category-entry-card img');
   await mobileFront.screenshot({ path: path.join(outputDir, "mobile-front.png"), fullPage: true });
   const mobileAdmin = await mobile.newPage();
   watchErrors(mobileAdmin, "mobile-admin");
   await installFrameProbe(mobileAdmin);
   await login(mobileAdmin);
   await assertNoPrematureVisibleFrame(mobileAdmin, "admin");
+  await assertBrowserLayout(mobileAdmin, { front: false, label: "mobile admin" });
   await mobileAdmin.screenshot({ path: path.join(outputDir, "mobile-admin.png"), fullPage: true });
   results.mobileScreenshots = true;
   await mobile.close();
