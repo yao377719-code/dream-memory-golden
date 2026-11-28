@@ -19,11 +19,14 @@ export async function assertBrowserLayout(page, { front, label }) {
     };
   }, { front });
   assert.ok(actual.urls.length, `${label}: no bundled stylesheet linked`);
-  for (const url of actual.urls) {
-    const response = await page.request.get(url);
-    assert.equal(response.status(), 200, `${label}: stylesheet request failed`);
-    assert.match(response.headers()["content-type"] ?? "", /^text\/css\b/i, `${label}: stylesheet response is not CSS`);
-    assert.ok((await response.body()).length > 100, `${label}: stylesheet is empty`);
+  const styles = await page.evaluate(async (urls) => Promise.all(urls.map(async (url) => {
+    const response = await fetch(url, { cache: "force-cache" });
+    return { status: response.status, type: response.headers.get("content-type") ?? "", bytes: (await response.arrayBuffer()).byteLength };
+  })), actual.urls);
+  for (const style of styles) {
+    assert.equal(style.status, 200, `${label}: stylesheet request failed`);
+    assert.match(style.type, /^text\/css\b/i, `${label}: stylesheet response is not CSS`);
+    assert.ok(style.bytes > 100, `${label}: stylesheet is empty`);
   }
   assert.ok(actual.styled, `${label}: expected CSS was not applied`);
   assert.ok(actual.documentWidth <= actual.viewportWidth + 1, `${label}: horizontal overflow (${actual.documentWidth} > ${actual.viewportWidth})`);
