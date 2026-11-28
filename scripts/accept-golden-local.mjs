@@ -25,7 +25,8 @@ async function fixture(slug, password, kvId) {
   const configPath = path.join(cwd, "wrangler.jsonc");
   await writeFile(configPath, JSON.stringify(config));
   run(process.execPath, ["scripts/build-customer.mjs", "--config", configPath], { cwd, step: "build isolated blank artifact" });
-  return { cwd, config, configPath, identity: validateCustomerConfig(config), password };
+  const storagePath = await mkdtemp(path.join(scratch, "kv-"));
+  return { cwd, config, configPath, identity: validateCustomerConfig(config), password, storageParent: repository, storagePath };
 }
 
 await preflightArtifact(first);

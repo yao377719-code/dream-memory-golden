@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import net from "node:net";
@@ -85,9 +85,13 @@ export async function withLocalPages({ cwd, configPath, password, storagePath },
   }
 }
 
-export async function preflightArtifact({ cwd, configPath, identity }) {
+export async function preflightArtifact({ cwd, configPath, identity, storageParent = cwd }) {
   const password = "011019"; // Synthetic local-only credential.
-  return withLocalPages({ cwd, configPath, password }, async (url) => {
+  const scratch = path.join(storageParent, ".customer");
+  await mkdir(scratch, { recursive: true });
+  // Keep Miniflare SQLite paths outside the nested per-site checkout on Windows.
+  const storagePath = await mkdtemp(path.join(scratch, "kv-"));
+  return withLocalPages({ cwd, configPath, password, storagePath }, async (url) => {
     await acceptBlankHttp(url, identity, password);
     await acceptBlankBrowser({ url, password });
   });

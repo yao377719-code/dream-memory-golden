@@ -156,7 +156,7 @@ export async function cloudDriver({ repositoryRoot, template, npmCli, projectNam
       });
       await gateArtifact({
         artifactDirectory: path.join(cwd, "dist"),
-        preflight: () => preflightArtifact({ cwd, configPath, identity }),
+        preflight: () => preflightArtifact({ cwd, configPath, identity, storageParent: repositoryRoot }),
         deploy: () => cf(["pages", "deploy", "dist", "--project-name", identity.projectName,
           "--branch", identity.productionBranch, "--commit-hash", template.commit, "--commit-message", "Approved Golden blank template"],
         { step: "deploy the verified artifact" }),
