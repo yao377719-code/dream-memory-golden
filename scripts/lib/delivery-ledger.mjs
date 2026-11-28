@@ -52,7 +52,7 @@ export async function readDeliveryRecords(directory) {
 }
 
 function checkTransition(prior, record) {
-  for (const key of ["customerNumber", "customerId", "templateVersion", "templateCommit", "kvId"]) {
+  for (const key of ["customerNumber", "customerId", "templateVersion", "templateCommit", "kvId", "cloudAccountId"]) {
     if (prior?.[key] && record[key] && prior[key] !== record[key]) throw new Error("Cannot overwrite site identity");
   }
   if (prior?.status === "已售" && record.status !== "已售") throw new Error("Sold records cannot revert to unsold");

@@ -38,7 +38,7 @@ try {
 npm run customer:batch -- --count 5 --template-version $tag --approval $approval
 ```
 
-脚本从已确认的项目工作区创建干净副本，核对名称、预记资源创建、创建 Pages 和 KV、通过标准输入写 Secret，随后构建。部署前直接用当前构建产物启动本地 Pages 和 Functions，核对前后台身份、空数据、CSS、关键图片尺寸及手机和桌面布局。产物通过后才会调用 Wrangler。批量按站执行，首站完成固定域名复验后才进入下一站。生产口令只用于目标 Pages Secret 和交付验收，隔离预检使用合成口令。
+多账户登录时用进程环境的 CLOUDFLARE_ACCOUNT_ID 指定授权账户，续跑会核对首次记录的同一账户。脚本从已确认的项目工作区创建干净副本，核对名称、预记资源创建、创建 Pages 和 KV、通过标准输入写 Secret，随后构建。部署前直接用当前构建产物启动本地 Pages 和 Functions，核对前后台身份、空数据、CSS、关键图片尺寸及手机和桌面布局。产物通过后才会调用 Wrangler。批量按站执行，首站完成固定域名复验后才进入下一站。生产口令只用于目标 Pages Secret 和交付验收，隔离预检使用合成口令。
 
 `cf:deploy` 指向同一个开站入口。直接执行 Wrangler 或启用 Git 自动部署会绕过仓库门槛，发布账户仅在批准入口执行部署。新站正式域名通过远端配置、KV、HTTP 和真实浏览器登录、刷新、退出重登后，台账才标记待售。
 
@@ -52,6 +52,6 @@ npm run customer:batch -- --count 5 --template-version $tag --approval $approval
 
 ## 失败处理与回滚
 
-开站失败留在待验收。现有站正式发布前记录健康 deployment ID、固定域名、部署 commit 和绑定，并保留通过验收的完整产物。复验失败先停止后续发布，按审批回滚到已记录的健康 deployment ID，再复验固定域名、前后台身份、绑定、样式与读取。涉及图片回收的回滚还要确保单写者约束，部署回滚无法复原已经实删的对象。
+开站失败留在待验收。现有站正式发布前记录健康 deployment ID、固定域名、部署 commit 和绑定，并保留通过验收的完整产物。复验失败先停止后续发布，按审批在 Pages 项目 Deployments 中选择已记录的健康 production deployment，使用 Rollback to this deployment，再复验固定域名、前后台身份、绑定、样式与读取。参见 [Cloudflare Pages 回滚流程](https://developers.cloudflare.com/pages/configuration/rollbacks/)。涉及图片回收的回滚还要确保单写者约束，部署回滚无法复原已经实删的对象。
 
 图片生命周期绑定、日志接收端、容量和本地备份见 [运行与交付说明](OPERATIONS.md)。

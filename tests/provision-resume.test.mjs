@@ -32,6 +32,7 @@ test("single and batch use the same provision journal and resume without duplica
   const directory = await mkdtemp(path.resolve(".customer", "provision-test-"));
   const calls = { kv: 0, projects: 0, deploy: 0 };
   const stages = {
+    accountId: "a".repeat(32),
     checkNames: () => {},
     ensureKv: () => { calls.kv += 1; return "f".repeat(32); },
     ensureProject: () => { calls.projects += 1; },
@@ -48,6 +49,8 @@ test("single and batch use the same provision journal and resume without duplica
   assert.equal(pending.failure, "fixed-domain-acceptance");
   assert.equal(pending.kvId, "f".repeat(32));
   assert.equal(await readCredential(directory, pending.projectName), "040404");
+  await assert.rejects(provisionSite({ directory, record: pending, password: first.password,
+    steps: { ...stages, accountId: "b".repeat(32) } }), /different Cloudflare account/);
   const done = await provisionSite({ directory, record: pending, password: first.password, steps: { ...stages, accept: () => {} } });
   assert.equal(done.status, "待售");
   assert.equal(done.deployedCommit, template.commit);

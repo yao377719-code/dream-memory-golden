@@ -27,6 +27,12 @@ export async function provisionSite({ directory, record, password, steps }) {
       throw new Error(record.customerNumber + " stopped at " + name + "; resume the recorded project", { cause: error });
     }
   };
+  if (steps.accountId) {
+    if (record.cloudAccountId && record.cloudAccountId !== steps.accountId) {
+      throw new Error(record.customerNumber + " belongs to a different Cloudflare account");
+    }
+    if (!record.cloudAccountId) await persist({ cloudAccountId: steps.accountId });
+  }
   await step("collision-check", () => steps.checkNames(record));
   await step("kv-create", async (recovery) => ({ kvId: await steps.ensureKv(record, recovery) }));
   await step("pages-create", (recovery) => steps.ensureProject(record, recovery));
@@ -105,13 +111,26 @@ export async function cloudDriver({ repositoryRoot, template, npmCli, projectNam
   run(process.execPath, [npmCli, "ci"], { cwd, step: "locked dependency installation" });
   await verifyBrowserAvailable();
 
-  const cf = (args, options = {}) => run(process.execPath, [cli, ...args], { cwd, ...options });
+  const wranglerEnv = {
+    ...process.env,
+    WRANGLER_SEND_METRICS: "false",
+    WRANGLER_LOG_PATH: path.join(freshRoot, projectName + ".wrangler.log"),
+  };
+  const whoami = JSON.parse(run(process.execPath, [cli, "whoami", "--json"], { cwd, env: wranglerEnv, step: "verify Cloudflare account" }));
+  const available = (whoami.accounts ?? []).map((account) => account.id);
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || (available.length === 1 ? available[0] : "");
+  if (!available.includes(accountId) || !/^[0-9a-f]{32}$/i.test(accountId)) {
+    throw new Error("Select the authorized Cloudflare account with CLOUDFLARE_ACCOUNT_ID");
+  }
+  wranglerEnv.CLOUDFLARE_ACCOUNT_ID = accountId;
+  const cf = (args, options = {}) => run(process.execPath, [cli, ...args], { cwd, env: wranglerEnv, ...options });
   const kvs = () => JSON.parse(cf(["kv", "namespace", "list"], { step: "verify namespace names" }));
   const projects = () => JSON.parse(cf(["pages", "project", "list", "--json"], { step: "verify Pages names" }));
   const byName = (project) => projects().find((item) => item["Project Name"] === project);
   const configPath = path.join(cwd, "wrangler.jsonc");
 
   return {
+    accountId,
     checkNames(record) {
       if (kvs().some((item) => item.title === record.projectName) || byName(record.projectName)) throw new Error("Cloud name already occupied");
     },
@@ -165,7 +184,7 @@ export async function cloudDriver({ repositoryRoot, template, npmCli, projectNam
     async accept(_record, password) {
       run(process.execPath, [fileURLToPath(new URL("../accept-customer.mjs", import.meta.url)), "--config", configPath], {
         cwd, step: "verify fixed domain in API, KV and browser",
-        env: { ...process.env, ADMIN_PASSWORD: password },
+        env: { ...wranglerEnv, ADMIN_PASSWORD: password },
       });
     },
   };
