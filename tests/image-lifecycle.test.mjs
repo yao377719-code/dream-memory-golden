@@ -15,10 +15,10 @@ const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAAAAgA
 const worker = [
   'import { onRequestGet as getPublic } from "./functions/api/site-data.mjs";',
   'import { onRequestGet as getImage } from "./functions/api/site-image.mjs";',
-  'import { onRequestPost as upload } from "./functions/api/admin-image.mjs";',
+  'import { onRequestPost as upload, onRequestGet as inventory } from "./functions/api/admin-image.mjs";',
   'import { onRequestPost as save } from "./functions/api/admin-data.mjs";',
   'const routes = {"/api/site-data":getPublic,"/api/site-image":getImage,"/api/admin-image":upload,"/api/admin-data":save};',
-  'export default {fetch(request,env){return routes[new URL(request.url).pathname]({request,env,data:{}});}};',
+  'export default {fetch(request,env){const route=new URL(request.url).pathname;return (route==="/api/admin-image" && request.method==="GET" ? inventory : routes[route])({request,env,data:{}});}};',
 ].join("\n");
 const modules = async (options) => [{ type: "ESModule", path: options.entryPoints ? "lifecycle.mjs" : "pages.mjs",
   contents: (await build({ ...options, bundle: true, write: false, format: "esm" })).outputFiles[0].text }];
@@ -35,8 +35,8 @@ test("real isolated KV and Durable Object retain shared images, remove the last 
         modules: await modules({ entryPoints: ["cloudflare/image-lifecycle-worker.mjs"] }) },
     ],
   });
-  const post = (pathname, payload) => miniflare.dispatchFetch(base + pathname,
-    { method: "POST", headers: { "x-admin-password": "010011" }, body: JSON.stringify(payload) });
+  const post = (pathname, payload, revision) => miniflare.dispatchFetch(base + pathname,
+    { method: "POST", headers: { "x-admin-password": "010011", ...(revision === undefined ? {} : { "if-match": revision }) }, body: JSON.stringify(payload) });
   try {
     const uploaded = await post("/api/admin-image", { imageData: "data:image/png;base64," + png });
     assert.equal(uploaded.status, 200);
@@ -47,7 +47,11 @@ test("real isolated KV and Durable Object retain shared images, remove the last 
     assert.equal(shared.status, 200);
     assert.equal(shared.headers.get("cache-control"), "no-store");
     await shared.arrayBuffer();
-    assert.equal((await post("/api/admin-data", { galleryDraft: { images: [] } })).status, 200);
+    const before = await (await miniflare.dispatchFetch(base + "/api/site-data")).json();
+    const revision = before.data.updatedAt;
+    const concurrent = await Promise.all(["synthetic-one", "synthetic-two"].map((nickname) =>
+      post("/api/admin-data", { galleryDraft: { images: [] }, profile: { nickname } }, revision)));
+    assert.deepEqual(concurrent.map((item) => item.status).sort(), [200, 409]);
     const removed = await miniflare.dispatchFetch(base + image);
     assert.equal(removed.status, 404);
     assert.equal(removed.headers.get("cache-control"), "no-store");
@@ -56,6 +60,12 @@ test("real isolated KV and Durable Object retain shared images, remove the last 
     assert.equal((await post("/api/admin-data", { profile: { cover: image } })).status, 409);
     const publicData = await (await miniflare.dispatchFetch(base + "/api/site-data")).json();
     assert.equal(publicData.data.galleryDraft.images.length, 0);
+    const pendingUpload = await post("/api/admin-image", { imageData: "data:image/png;base64," + png });
+    const pendingImage = new URL((await pendingUpload.json()).image, base).searchParams.get("id");
+    const report = await (await miniflare.dispatchFetch(base + "/api/admin-image?inventory=1",
+      { headers: { "x-admin-password": "010011" } })).json();
+    assert.deepEqual(report.candidates.map((item) => item.key), [pendingImage]);
+    assert.equal(report.estimatedBytes, Buffer.from(png, "base64").length);
   } finally {
     await miniflare.dispose();
   }
